@@ -1,0 +1,23 @@
+[Unit]
+Description=Robocontrol Cloudflare Tunnel Provisioning
+# Must run after we have internet, but before cloudflared and robocontrol start
+After=network-online.target
+Wants=network-online.target
+Before=cloudflared.service robocontrol.service
+# Skip if already provisioned (config.yml present)
+ConditionPathExists=!%h/.cloudflared/config.yml
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=pi
+# Load CLOUDFLARED_ENV_PASSPHRASE (and other overrides) if .env exists.
+# The '-' prefix means the file is optional — no failure if absent.
+EnvironmentFile=-/home/pi/robocontrol/.env
+ExecStart=/usr/bin/python3 /home/pi/robocontrol/scripts/cloudflared_provision.py
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cloudflared-provision
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,32 @@
+<h2>Missions</h2>
+<p style="color: var(--pico-muted-color); margin-bottom: 1.5rem;">
+  Autonomous mission modes. Auto-Drive is live; the others are planned for a future release.
+</p>
+
+<div class="mission-cards">
+
+  <!-- Path Following -->
+  <div class="mission-card">
+    <span class="coming-soon">Coming soon</span>
+    <h3>🗺 Path Following</h3>
+    <p>Define a route and the car will execute it autonomously, following the sequence of waypoints you assign.</p>
+    <button disabled onclick="sendMission('path')">Configure Route</button>
+  </div>
+
+  <!-- Visual Search -->
+  <div class="mission-card">
+    <span class="coming-soon">Coming soon</span>
+    <h3>🔍 Visual Search</h3>
+    <p>Upload a target image. The car will navigate and search until it locates the target — then it will alert you with a beep and a message here.</p>
+    <button disabled onclick="sendMission('search')">Start Search</button>
+  </div>
+
+  <!-- Auto-Drive -->
+  <div class="mission-card">
+    <h3>🤖 Auto-Drive</h3>
+    <p>Fully autonomous driving mode. The car will navigate its environment independently without manual input.</p>
+    <button class="autodrive-btn" onclick="autoDriveClick()">🤖 Auto-Drive &nbsp; OFF</button>
+    <p class="autodrive-status" style="color: var(--pico-muted-color); margin-top: 0.5rem;"></p>
+  </div>
+
+</div>

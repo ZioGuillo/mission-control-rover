@@ -1,0 +1,122 @@
+<div class="settings-section">
+  <h2>GitHub OAuth</h2>
+
+  {% if request.query_params.get('saved') == 'ml' %}
+  <p style="color:#2dc653">Computer Vision settings saved.</p>
+  {% elif request.query_params.get('saved') == 'github' %}
+  <p style="color:#2dc653">GitHub settings saved.</p>
+  {% elif request.query_params.get('saved') == 'password' %}
+  <p style="color:#2dc653">Password changed successfully.</p>
+  {% elif request.query_params.get('error') == 'wrong_password' %}
+  <p style="color:#e53935">Current password is incorrect.</p>
+  {% elif request.query_params.get('error') == 'password_mismatch' %}
+  <p style="color:#e53935">New passwords do not match.</p>
+  {% elif request.query_params.get('error') == 'password_too_short' %}
+  <p style="color:#e53935">New password must be at least 8 characters.</p>
+  {% endif %}
+
+  <form method="post" action="/settings/github">
+    <label>
+      <input type="checkbox" name="github_enabled" role="switch" {% if github_enabled %}checked{% endif %}>
+      Enable GitHub OAuth login
+    </label>
+    <label>
+      Client ID
+      <input type="text" name="github_client_id" value="{{ github_client_id }}" placeholder="Ov23li...">
+    </label>
+    <label>
+      Client Secret
+      <input type="password" name="github_client_secret" placeholder="Leave blank to keep current secret">
+    </label>
+    <button type="submit">Save GitHub settings</button>
+  </form>
+</div>
+
+<div class="settings-section">
+  <h2>Users</h2>
+  {% if github_users %}
+  <table>
+    <thead>
+      <tr><th>User</th><th>Status</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+    {% for u in github_users %}
+      <tr>
+        <td>
+          {% if u.github_avatar %}<img src="{{ u.github_avatar }}" width="24" height="24" style="border-radius:50%;vertical-align:middle;margin-right:0.4rem">{% endif %}
+          {{ u.github_login }}
+        </td>
+        <td>
+          <span style="color:{% if u.role == 'approved' %}#2dc653{% elif u.role == 'pending' %}#f9a825{% else %}#e53935{% endif %}">
+            {{ u.role }}
+          </span>
+        </td>
+        <td style="display:flex;gap:0.5rem">
+          {% if u.role != 'approved' %}
+          <form method="post" action="/settings/users/{{ u.id }}/approve" style="margin:0">
+            <button type="submit" style="padding:0.3rem 0.7rem;font-size:0.8rem;background:#2dc653;border:none;border-radius:6px;color:#000;cursor:pointer">Approve</button>
+          </form>
+          {% endif %}
+          {% if u.role != 'revoked' %}
+          <form method="post" action="/settings/users/{{ u.id }}/revoke" style="margin:0">
+            <button type="submit" style="padding:0.3rem 0.7rem;font-size:0.8rem;background:#e53935;border:none;border-radius:6px;color:#fff;cursor:pointer">Revoke</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="color:var(--pico-muted-color)">No GitHub users yet.</p>
+  {% endif %}
+</div>
+
+<div class="settings-section">
+  <h2>Admin Password</h2>
+  <form method="post" action="/settings/password">
+    <label>
+      Current password
+      <input type="password" name="current_password" required>
+    </label>
+    <label>
+      New password
+      <input type="password" name="new_password" required minlength="8">
+    </label>
+    <label>
+      Confirm new password
+      <input type="password" name="confirm_password" required minlength="8">
+    </label>
+    <button type="submit">Change password</button>
+  </form>
+</div>
+
+<div class="settings-section">
+  <h2>Computer Vision</h2>
+  <p style="color:var(--pico-muted-color);font-size:0.85rem">
+    When enabled, ML object detection runs on the live camera feed and draws
+    bounding boxes for all connected users. Uses MobileNet SSD v1 (80 COCO classes).
+  </p>
+  {% if ml_available %}
+  <p style="color:#2dc653;font-size:0.85rem">Model: loaded ✓</p>
+  {% elif not ml_library_available %}
+  <p style="color:#e53935;font-size:0.85rem">
+    Inference library not available — <code>tflite-runtime</code> has no wheels for Python 3.13 on ARM64 yet.
+    {% if ml_model_found %}Model file is ready on disk.{% endif %}
+    Check back when <code>tflite-runtime</code> or <code>ai-edge-litert</code> publishes Python 3.13 support.
+  </p>
+  {% else %}
+  <p style="color:#f9a825;font-size:0.85rem">Model file not found — run <code>make deploy</code> on the robot.</p>
+  {% endif %}
+  <form method="post" action="/settings/ml">
+    <label>
+      <input type="checkbox" name="ml_enabled" role="switch"
+             {% if ml_enabled %}checked{% endif %}
+             {% if not ml_available %}disabled{% endif %}>
+      Enable ML Object Detection
+    </label>
+    <button type="submit" {% if not ml_available %}disabled{% endif %}>
+      Save
+    </button>
+  </form>
+</div>

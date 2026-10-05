@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RoboControl</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <style>
+    /* ── Mission control theme ──
+       Single accent (#639bff) matches the login page exactly. Semantic
+       status colors (ok/warn/danger) stay separate from the accent since
+       they carry real meaning (battery/connection state), not just style.
+       Overriding Pico's own CSS variables re-themes every component that
+       already builds on them (buttons, forms, switches, cards, borders)
+       without needing to restyle each one by hand. */
+    html[data-theme="dark"] {
+      --accent: #639bff;
+      --bg-deep: #02040a;
+      --bg-glow: #0d1a33;
+      --ok: #2dc653;
+      --warn: #f9a825;
+      --danger: #e53935;
+      --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+
+      --pico-background-color: var(--bg-deep);
+      --pico-color: #e8eeff;
+      --pico-muted-color: #8a97bd;
+      --pico-muted-border-color: rgba(255,255,255,0.08);
+      --pico-border-radius: 0.9rem;
+      --pico-card-background-color: rgba(255,255,255,0.03);
+      --pico-card-border-color: rgba(255,255,255,0.08);
+      --pico-card-sectioning-background-color: rgba(255,255,255,0.03);
+
+      --pico-primary: var(--accent);
+      --pico-primary-background: var(--accent);
+      --pico-primary-border: var(--accent);
+      --pico-primary-underline: rgba(99,155,255,0.5);
+      --pico-primary-hover: #86b3ff;
+      --pico-primary-hover-background: #7eaeff;
+      --pico-primary-hover-border: #7eaeff;
+      --pico-primary-hover-underline: rgba(99,155,255,0.7);
+      --pico-primary-focus: rgba(99,155,255,0.35);
+      --pico-primary-inverse: var(--bg-deep);
+
+      --pico-secondary: #9fb3d6;
+      --pico-secondary-background: rgba(99,155,255,0.1);
+      --pico-secondary-border: rgba(99,155,255,0.25);
+      --pico-secondary-hover: #c3d3ef;
+      --pico-secondary-hover-background: rgba(99,155,255,0.16);
+      --pico-secondary-hover-border: rgba(99,155,255,0.4);
+      --pico-secondary-focus: rgba(99,155,255,0.25);
+      --pico-secondary-inverse: var(--bg-deep);
+
+      --pico-del-color: var(--danger);
+
+      --pico-form-element-background-color: rgba(255,255,255,0.04);
+      --pico-form-element-border-color: rgba(255,255,255,0.1);
+      --pico-form-element-color: #e8eeff;
+      --pico-form-element-placeholder-color: #5c6a8f;
+      --pico-form-element-focus-color: var(--accent);
+      --pico-form-element-active-border-color: var(--accent);
+      --pico-form-element-active-background-color: rgba(255,255,255,0.06);
+
+      --pico-switch-background-color: rgba(255,255,255,0.14);
+      --pico-switch-checked-background-color: var(--accent);
+      --pico-switch-color: #fff;
+
+      --pico-range-border-color: rgba(99,155,255,0.25);
+      --pico-range-active-border-color: var(--accent);
+      --pico-range-thumb-color: var(--accent);
+      --pico-range-thumb-border-color: var(--accent);
+      --pico-range-thumb-active-color: #86b3ff;
+    }
+
+    /* Deep-space gradient + a static (non-animated) scatter of stars —
+       same visual family as the login page's canvas, toned down so it
+       doesn't compete with the live camera feed/telemetry while driving. */
+    body {
+      background-color: var(--bg-deep);
+      background-image:
+        radial-gradient(ellipse 900px 700px at 85% -10%, var(--bg-glow) 0%, transparent 60%),
+        radial-gradient(1px 1px at 8% 15%, rgba(255,255,255,0.6) 50%, transparent 52%),
+        radial-gradient(1px 1px at 22% 68%, rgba(255,255,255,0.4) 50%, transparent 52%),
+        radial-gradient(1.5px 1.5px at 42% 32%, rgba(255,255,255,0.5) 50%, transparent 52%),
+        radial-gradient(1px 1px at 63% 78%, rgba(255,255,255,0.35) 50%, transparent 52%),
+        radial-gradient(1.5px 1.5px at 78% 22%, rgba(255,255,255,0.45) 50%, transparent 52%),
+        radial-gradient(1px 1px at 91% 58%, rgba(255,255,255,0.3) 50%, transparent 52%),
+        radial-gradient(1px 1px at 35% 90%, rgba(255,255,255,0.3) 50%, transparent 52%);
+      background-repeat: no-repeat, repeat, repeat, repeat, repeat, repeat, repeat, repeat;
+      background-size: 100% 100%, 380px 380px, 380px 380px, 380px 380px, 380px 380px, 380px 380px, 380px 380px, 380px 380px;
+      background-attachment: fixed;
+      min-height: 100vh;
+    }
+
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(99,155,255,0.25); border-radius: 6px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(99,155,255,0.4); }
+
+    /* ── Status dot ── */
+    .status-dot {
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: #666;
+      display: inline-block;
+      cursor: help;
+      transition: background 0.4s;
+      flex-shrink: 0;
+    }
+    .status-dot.ok    { background: #2dc653; box-shadow: 0 0 6px #2dc653; }
+    .status-dot.error { background: #e53935; box-shadow: 0 0 6px #e53935; }
+
+    .servo-dot-label {
+      font-size: 0.72rem;
+      color: var(--pico-muted-color);
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+
+    /* ── Topbar ── */
+    .topbar {
+      display: flex; align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem 0 0.5rem;
+    }
+    .topbar h1 { margin: 0; font-size: 1.4rem; }
+    .status-wrapper {
+      display: flex; align-items: center; gap: 0.5rem;
+      font-size: 0.8rem; color: var(--pico-muted-color);
+      max-width: 55%;
+      text-align: right;
+    }
+    #status-msg {
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+
+    /* ── Tabs ── */
+    .tabs {
+      display: flex; gap: 0;
+      border-bottom: 2px solid var(--pico-muted-border-color);
+      margin-bottom: 1.5rem;
+      overflow-x: auto;
+    }
+    .tab-btn {
+      padding: 0.65rem 1.25rem;
+      background: none; border: none;
+      border-bottom: 3px solid transparent;
+      cursor: pointer;
+      color: var(--pico-muted-color);
+      font-size: 0.95rem;
+      margin-bottom: -2px;
+      white-space: nowrap;
+    }
+    .tab-btn.active {
+      color: var(--pico-primary);
+      border-bottom-color: var(--pico-primary);
+      font-weight: 600;
+    }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* ── Notifications ── */
+    #notification-area {
+      position: fixed; top: 1rem;
+      left: 50%; transform: translateX(-50%);
+      z-index: 999; min-width: 280px; max-width: 90vw;
+    }
+    .notification {
+      padding: 0.7rem 1rem;
+      border-radius: 14px; margin-bottom: 0.5rem;
+      display: flex; align-items: center;
+      justify-content: space-between; gap: 1rem;
+      animation: slideIn 0.2s ease;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+    }
+    .notification.info    { background: #1565c0; color: #fff; }
+    .notification.warning { background: #e65100; color: #fff; }
+    .notification.alert   { background: #b71c1c; color: #fff; }
+    .notif-close {
+      background: none; border: none; color: inherit;
+      cursor: pointer; padding: 0; font-size: 1rem; line-height: 1;
+    }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(-8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── D-pad ── */
+    .dpad {
+      display: grid;
+      grid-template-columns: repeat(3, 72px);
+      grid-template-rows: repeat(3, 72px);
+      gap: 6px;
+      width: fit-content;
+      margin: 1rem auto;
+    }
+    .dpad-btn {
+      width: 72px; height: 72px;
+      font-size: 1.5rem;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 18px; cursor: pointer;
+      touch-action: none;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.1);
+      color: var(--accent);
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .dpad-btn:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.18); }
+    .dpad-btn.stop-btn { background: var(--pico-del-color); border-color: var(--pico-del-color); color: #fff; }
+    .dpad-btn.stop-btn:hover { background: #ff5048; }
+
+    /* ── Drive layout ── */
+    .drive-layout {
+      display: flex; flex-direction: column; gap: 1.5rem;
+    }
+    @media (min-width: 768px) {
+      .drive-layout {
+        flex-direction: row; align-items: flex-start;
+      }
+      .pip-container { flex: 0 0 300px; order: 2; }
+      .controls-container { flex: 1; order: 1; }
+    }
+
+    /* ── PiP camera ── */
+    .pip-container {
+      border-radius: 18px;
+      overflow: hidden;
+      background: #05070d;
+      border: 1px solid var(--pico-muted-border-color);
+      position: relative;
+    }
+    .pip-container iframe,
+    .pip-container img {
+      display: block; width: 100%; height: 200px; border: none; object-fit: cover;
+    }
+    @media (min-width: 768px) {
+      .pip-container iframe,
+      .pip-container img { height: 220px; }
+    }
+    .pip-placeholder {
+      height: 200px; display: flex;
+      align-items: center; justify-content: center;
+      color: var(--pico-muted-color); font-size: 0.9rem;
+    }
+
+    /* ── Speed slider ── */
+    .speed-control { margin: 1rem auto; max-width: 240px; }
+    .speed-control label { display: flex; flex-direction: column; gap: 0.25rem; }
+
+    /* ── Auto-drive ── */
+    .autodrive-section {
+      display: flex; align-items: center; justify-content: center; gap: 0.75rem;
+      margin-top: 0.75rem;
+    }
+    .autodrive-section small { color: var(--pico-muted-color); }
+    .autodrive-btn.active { background: #2dc653; border-color: #2dc653; color: #06240f; }
+
+    /* ── Pan/tilt grid ── */
+    .pantilt-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 60px);
+      grid-template-rows: repeat(3, 60px);
+      gap: 6px;
+      width: fit-content;
+      margin: 1rem auto;
+    }
+    .pt-btn {
+      width: 60px; height: 60px;
+      font-size: 1.3rem;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 16px; cursor: pointer;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.1);
+      color: var(--accent);
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .pt-btn:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.18); }
+    .pt-btn.center-btn {
+      background: var(--pico-secondary-background);
+      border-color: var(--pico-secondary-border);
+      color: var(--pico-secondary);
+    }
+
+    /* ── Camera tab ── */
+    .camera-stream { position: relative; }
+    .camera-stream iframe,
+    .camera-stream img {
+      width: 100%; height: 340px; border: none;
+      border-radius: 18px; background: #05070d; object-fit: contain; display: block;
+    }
+    @media (min-width: 768px) {
+      .camera-stream iframe,
+      .camera-stream img { height: 480px; }
+    }
+    .camera-placeholder {
+      height: 340px; background: #05070d; border-radius: 18px;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--pico-muted-color); border: 1px solid var(--pico-muted-border-color);
+    }
+    /* ── Stream reconnect overlay (shown when stream is dead) ── */
+    .stream-overlay {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.55); border-radius: inherit; z-index: 5;
+    }
+    .stream-reconnect-btn {
+      font-size: 1.5rem; line-height: 1;
+      background: rgba(255,255,255,0.12); border: 2px solid rgba(255,255,255,0.7);
+      color: #fff; border-radius: 50%; width: 3.2rem; height: 3.2rem;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: background 0.15s;
+    }
+    .stream-reconnect-btn:hover { background: rgba(255,255,255,0.25); }
+    /* ── Corner refresh button (always visible) ── */
+    .stream-corner-btn {
+      position: absolute; top: 6px; right: 8px; z-index: 6;
+      width: 26px; height: 26px; border-radius: 50%; border: none;
+      background: rgba(0,0,0,0.42); color: rgba(255,255,255,0.6);
+      font-size: 0.95rem; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.15s, color 0.15s, transform 0.25s;
+    }
+    .stream-corner-btn:hover { background: rgba(0,0,0,0.75); color: #fff; }
+    .stream-corner-btn.spinning { animation: spin 0.6s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Mission cards ── */
+    .mission-cards {
+      display: grid; gap: 1rem;
+      grid-template-columns: 1fr;
+    }
+    @media (min-width: 600px) {
+      .mission-cards { grid-template-columns: 1fr 1fr; }
+    }
+    .mission-card {
+      border: 1px solid var(--pico-muted-border-color);
+      border-radius: 18px; padding: 1.25rem;
+      background: rgba(255,255,255,0.025);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+    }
+    .mission-card h3 { margin-bottom: 0.5rem; }
+    .mission-card p  { color: var(--pico-muted-color); font-size: 0.9rem; }
+    .coming-soon {
+      display: inline-block;
+      font-size: 0.72rem;
+      background: transparent;
+      border: 1px solid var(--pico-muted-border-color);
+      color: var(--pico-muted-color);
+      padding: 0.15rem 0.5rem;
+      border-radius: 20px;
+      margin-bottom: 0.75rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    /* ── Settings ── */
+    .settings-section {
+      margin-bottom: 2rem;
+    }
+    .settings-section h2 {
+      font-size: 1.1rem;
+      margin-bottom: 1rem;
+      padding-bottom: 0.4rem;
+      border-bottom: 1px solid var(--pico-muted-border-color);
+    }
+    .settings-section table { width: 100%; }
+
+    /* ── User info in topbar ── */
+    .user-info {
+      display: flex; align-items: center; gap: 0.4rem;
+      font-size: 0.8rem; color: var(--pico-muted-color);
+    }
+    .user-icon-wrapper { position: relative; }
+    /* Reset PicoCSS button defaults for both topbar icon buttons */
+    .user-icon-btn, .logout-icon-btn {
+      box-sizing: border-box;
+      width: 28px; height: 28px;
+      min-width: 28px; min-height: 28px;
+      padding: 0; margin: 0;
+      display: flex; align-items: center; justify-content: center;
+      border: 1px solid var(--pico-muted-border-color);
+      border-radius: 10px; cursor: pointer;
+      background: none;
+      transition: color 0.15s, border-color 0.15s, background 0.15s;
+    }
+    .user-icon-btn { font-size: 0.95rem; line-height: 1; }
+    .logout-icon-btn { color: var(--pico-muted-color); }
+    .user-icon-btn:hover, .logout-icon-btn:hover {
+      background: var(--pico-muted-border-color);
+      border-color: var(--pico-color);
+      color: var(--pico-color);
+    }
+    .icon-picker {
+      display: none;
+      position: absolute; right: 0; top: calc(100% + 6px);
+      background: var(--pico-card-background-color);
+      border: 1px solid var(--pico-muted-border-color);
+      border-radius: 18px; padding: 0.4rem 0.5rem;
+      gap: 0.3rem; z-index: 200;
+      flex-direction: row;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    }
+    .icon-picker.open { display: flex; }
+    .icon-option {
+      box-sizing: border-box;
+      width: 32px; height: 32px;
+      font-size: 1.1rem; line-height: 1;
+      display: flex; align-items: center; justify-content: center;
+      background: none; border: 2px solid transparent;
+      border-radius: 8px; padding: 0; margin: 0; cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .icon-option:hover { background: var(--pico-muted-border-color); }
+    .icon-option.selected { border-color: var(--pico-primary); }
+
+    /* ── Telemetry ── */
+    .telemetry-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+    @media (min-width: 600px) {
+      .telemetry-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+    .telemetry-card {
+      border: 1px solid var(--pico-muted-border-color);
+      border-radius: 18px; padding: 1rem 1.1rem;
+      background: rgba(255,255,255,0.025);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+    }
+    .tel-label {
+      font-size: 0.78rem;
+      color: var(--pico-muted-color);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 0.35rem;
+    }
+    .tel-value {
+      font-size: 1.75rem;
+      font-weight: 800;
+      font-family: var(--font-mono);
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+      margin-bottom: 0.3rem;
+    }
+    .tel-sub {
+      font-size: 0.8rem;
+      color: var(--pico-muted-color);
+    }
+    .tel-latency-dot {
+      display: inline-block;
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      margin-right: 0.4rem;
+      vertical-align: middle;
+    }
+    .tel-note {
+      font-size: 0.78rem;
+      color: var(--pico-muted-color);
+      margin-top: 0.5rem;
+    }
+    .tel-bar-track {
+      height: 5px; border-radius: 3px;
+      background: var(--pico-muted-border-color);
+      margin-top: 0.45rem; overflow: hidden;
+    }
+    .tel-bar-fill {
+      height: 100%; border-radius: 3px;
+      background: #2dc653;
+      transition: width 0.4s ease, background 0.4s ease;
+    }
+
+    /* ── Forced password change modal ── */
+    .pwd-modal-backdrop {
+      position: fixed; inset: 0; z-index: 1000;
+      background: rgba(0,0,0,0.75);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .pwd-modal-card {
+      width: min(420px, 92vw);
+      background: var(--pico-card-background-color);
+      border: 1px solid var(--pico-muted-border-color);
+      border-radius: 16px; padding: 2rem 1.75rem;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+    }
+    .pwd-modal-card h2 { margin-bottom: 0.4rem; font-size: 1.25rem; }
+    .pwd-modal-card p.hint {
+      color: var(--pico-muted-color); font-size: 0.88rem; margin-bottom: 1.2rem;
+    }
+    .pwd-modal-card .pwd-error {
+      color: #ef9a9a; font-size: 0.85rem;
+      background: rgba(229,57,53,0.12); border: 1px solid rgba(229,57,53,0.25);
+      border-radius: 8px; padding: 0.45rem 0.75rem; margin-bottom: 1rem;
+    }
+  </style>
+</head>
+<body>
+<main class="container">
+  <div id="notification-area"></div>
+
+  <div class="topbar">
+    <h1>🤖 RoboControl</h1>
+    <div class="status-wrapper">
+      <span id="status-msg"></span>
+      {% if user %}
+      {% set icon_map = {'astronaut':'🧑‍🚀','alien':'👽','ufo':'🛸','dog':'🐶'} %}
+      {% set cur_icon = user.user_icon if user.user_icon in icon_map else 'astronaut' %}
+      <span class="user-info">
+        <div class="user-icon-wrapper">
+          <button class="user-icon-btn" id="user-icon-btn"
+                  onclick="toggleIconPicker(event)"
+                  title="{{ user.github_login or user.username }}">{{ icon_map[cur_icon] }}</button>
+          <div class="icon-picker" id="icon-picker">
+            {% for name, emoji in icon_map.items() %}
+            <form method="post" action="/settings/icon" style="display:contents">
+              <input type="hidden" name="icon" value="{{ name }}">
+              <button type="submit"
+                      class="icon-option{% if cur_icon == name %} selected{% endif %}"
+                      title="{{ name }}">{{ emoji }}</button>
+            </form>
+            {% endfor %}
+          </div>
+        </div>
+        <form method="post" action="/auth/logout" style="margin:0">
+          <button type="submit" class="logout-icon-btn" title="Logout">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2.2"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+              <polyline points="16 17 21 12 16 7"/>
+              <line x1="21" y1="12" x2="9" y2="12"/>
+            </svg>
+          </button>
+        </form>
+      </span>
+      {% endif %}
+      <span class="servo-dot-label" title="Servo motors">
+        ⚙ <span class="status-dot" id="servo-dot" title="Servo: checking..."></span>
+      </span>
+      <button id="reconnect-btn"
+              onclick="reconnectAll()"
+              title="Reconnect"
+              style="display:none;box-sizing:border-box;width:22px;height:22px;min-width:22px;
+                     padding:0;margin:0;background:none;border:1px solid #e53935;border-radius:5px;
+                     cursor:pointer;font-size:0.8rem;line-height:1;color:#e53935;
+                     align-items:center;justify-content:center;">↺</button>
+      <span class="status-dot" id="status-dot" title="Checking..."></span>
+    </div>
+  </div>
+
+  <nav class="tabs">
+    <button class="tab-btn active" onclick="showTab('drive', this)" id="tab-btn-drive">Drive</button>
+    <button class="tab-btn" onclick="showTab('camera', this)" id="tab-btn-camera">Camera</button>
+    <button class="tab-btn" onclick="showTab('missions', this)" id="tab-btn-missions">Missions</button>
+    <button class="tab-btn" onclick="showTab('telemetry', this)" id="tab-btn-telemetry">Telemetry</button>
+    {% if user and user.role == 'admin' %}
+    <button class="tab-btn" onclick="showTab('settings', this)" id="tab-btn-settings">Settings</button>
+    {% endif %}
+  </nav>
+
+  <div id="tab-drive" class="tab-content active">
+    {% include "_drive.html" %}
+  </div>
+  <div id="tab-camera" class="tab-content">
+    {% include "_camera.html" %}
+  </div>
+  <div id="tab-missions" class="tab-content">
+    {% include "_missions.html" %}
+  </div>
+  <div id="tab-telemetry" class="tab-content">
+    {% include "_telemetry.html" %}
+  </div>
+  {% if user and user.role == 'admin' %}
+  <div id="tab-settings" class="tab-content">
+    {% include "_settings.html" %}
+  </div>
+  {% endif %}
+</main>
+
+<script>
+  var MOTOR_SPEED_DEFAULT = {{ motor_speed_default }};
+
+  function toggleIconPicker(e) {
+    e.stopPropagation();
+    var picker = document.getElementById('icon-picker');
+    picker.classList.toggle('open');
+  }
+  document.addEventListener('click', function() {
+    var picker = document.getElementById('icon-picker');
+    if (picker) picker.classList.remove('open');
+  });
+</script>
+<script src="/static/app.js?v=5"></script>
+<script>
+  (function() {
+    var tab = new URLSearchParams(window.location.search).get('tab');
+    if (tab) {
+      var btn = document.getElementById('tab-btn-' + tab);
+      if (btn) showTab(tab, btn);
+    }
+  })();
+</script>
+{% if user and user.must_change_password %}
+<div class="pwd-modal-backdrop">
+  <div class="pwd-modal-card">
+    <h2>Set your password</h2>
+    <p class="hint">You're using the default password. Set a new one to continue.</p>
+    {% if request.query_params.get('pwd_error') == 'mismatch' %}
+    <p class="pwd-error">Passwords do not match.</p>
+    {% elif request.query_params.get('pwd_error') == 'too_short' %}
+    <p class="pwd-error">Password must be at least 8 characters.</p>
+    {% endif %}
+    <form method="post" action="/settings/first-password">
+      <label>
+        New password
+        <input type="password" name="new_password" required minlength="8" autofocus>
+      </label>
+      <label>
+        Confirm password
+        <input type="password" name="confirm_password" required minlength="8">
+      </label>
+      <button type="submit">Set password</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+</body>
+</html>

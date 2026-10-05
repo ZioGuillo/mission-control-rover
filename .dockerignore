@@ -1,0 +1,15 @@
+.git
+venv
+__pycache__
+*.pyc
+.pytest_cache
+tests
+docker
+images
+presentation
+data
+*.db
+.env
+.env.*
+!.env.example
+robocontrol.log

@@ -1,0 +1,33 @@
+fastapi>=0.110.0
+uvicorn>=0.27.0
+jinja2>=3.1.3
+python-multipart>=0.0.9
+pydantic-settings>=2.2.0
+httpx>=0.27.0
+itsdangerous>=2.1.2
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+# GPIO backend — board-specific, installed automatically by scripts/install.sh
+# based on /proc/device-tree/model. Import errors are caught gracefully on
+# non-Pi/Jetson systems (app/hardware/gpio_compat.py), so nothing here is a
+# hard requirement:
+#   Raspberry Pi 3/4        → RPi.GPIO
+#   Raspberry Pi 5          → rpi-lgpio  (drop-in RPi.GPIO replacement for the RP1 chip)
+#   Jetson Nano / Jetson    → Jetson.GPIO
+#
+# picamera2 handles CSI cameras via libcamera on a Raspberry Pi — system package:
+#   sudo apt install -y python3-picamera2
+Pillow>=10.0.0
+psutil>=5.9.0
+prometheus-client>=0.20.0
+numpy>=1.26.0
+# ML object detection (app/hardware/ml_driver.py) — has wheels for every
+# board/Python combo we support, but ml_driver.py still degrades gracefully
+# (available = False) if the import fails or the model file is missing.
+ai-edge-litert>=2.1.0
+# USB/V4L2 camera fallback (app/hardware/camera_driver.py) — picamera2 covers
+# Raspberry Pi CSI cameras but isn't installed here (system package, see
+# scripts/install.sh); this covers any board with a USB webcam instead,
+# including boards with no camera at all (falls back to simulated frames
+# when SIMULATE=true, or available=False otherwise).
+opencv-python-headless>=4.9.0

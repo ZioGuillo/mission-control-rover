@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RoboControl — Login</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      background: #000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    /* ── Login card ── */
+    .login-card {
+      width: min(380px, 92vw);
+      background: #0a0a0a;
+      border: 1px solid #1e1e1e;
+      border-radius: 24px;
+      padding: 2.4rem 2rem;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    }
+
+    /* ── Mission badge ── */
+    .login-badge {
+      width: 56px; height: 56px;
+      border-radius: 16px;
+      background: #141414;
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 0.9rem;
+      font-size: 1.5rem;
+    }
+
+    /* ── Title ── */
+    .login-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #fff;
+      letter-spacing: -0.01em;
+      margin-bottom: 0.25rem;
+    }
+    .login-tagline {
+      font-size: 0.75rem;
+      color: #666;
+      margin-bottom: 1.6rem;
+    }
+
+    /* ── Status messages ── */
+    .status-msg {
+      text-align: center;
+      font-size: 0.85rem;
+      padding: 0.55rem 0.9rem;
+      border-radius: 10px;
+      margin-bottom: 1.1rem;
+    }
+    .status-msg.error { background: rgba(229,57,53,0.12); color: #ef9a9a; border: 1px solid rgba(229,57,53,0.2); }
+    .status-msg.info  { background: rgba(99,155,255,0.1);  color: #90b4ff; border: 1px solid rgba(99,155,255,0.2); }
+
+    /* ── Form elements ── */
+    .field { margin-bottom: 0.7rem; text-align: left; }
+    .field label {
+      display: block;
+      font-size: 0.72rem;
+      font-weight: 500;
+      color: #555;
+      margin-bottom: 0.3rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .field input {
+      width: 100%;
+      padding: 0.75rem 0.9rem;
+      background: #161616;
+      border: 1px solid transparent;
+      border-radius: 12px;
+      color: #e8eeff;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.2s, background 0.2s;
+      -webkit-appearance: none;
+    }
+    .field input:focus {
+      border-color: rgba(99,155,255,0.5);
+      background: #1a1a1a;
+    }
+    .field input::placeholder { color: #444; }
+
+    /* ── Sign in button ── */
+    .btn-primary {
+      width: 100%;
+      padding: 0.8rem;
+      margin-top: 0.6rem;
+      background: #639bff;
+      color: #06142e;
+      border: none;
+      border-radius: 12px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    .btn-primary:hover  { opacity: 0.9; }
+    .btn-primary:active { transform: scale(0.98); }
+
+    /* ── Divider ── */
+    .divider {
+      display: flex;
+      align-items: center;
+      gap: 0.8rem;
+      margin: 1.2rem 0;
+      color: #444;
+      font-size: 0.8rem;
+    }
+    .divider::before, .divider::after {
+      content: "";
+      flex: 1;
+      border-top: 1px solid #1e1e1e;
+    }
+
+    /* ── GitHub button ── */
+    .github-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.6rem;
+      width: 100%;
+      padding: 0.75rem;
+      background: #161616;
+      border: 1px solid transparent;
+      border-radius: 12px;
+      color: #c8c8c8;
+      font-size: 0.92rem;
+      font-weight: 500;
+      text-decoration: none;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .github-btn:hover { background: #1a1a1a; color: #fff; }
+
+    /* ── Status indicator (real connectivity ping, not decorative) ── */
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      margin-top: 1.4rem;
+      font-size: 0.78rem;
+      color: #777;
+    }
+    .status-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: #374060;
+      flex-shrink: 0;
+      transition: background 0.4s, box-shadow 0.4s;
+    }
+    .status-dot.ok    { background: #3ddc84; box-shadow: 0 0 6px #3ddc84; }
+    .status-dot.error { background: #e53935; box-shadow: 0 0 6px #e53935; }
+
+    /* ── Footer ── */
+    .login-footer {
+      margin-top: 1.1rem;
+      text-align: center;
+      font-size: 0.7rem;
+      color: #444;
+      max-width: min(380px, 92vw);
+    }
+
+    /* ── Mobile ── */
+    @media (max-width: 480px) {
+      .login-card { padding: 2rem 1.4rem; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="login-card">
+  <div class="login-badge">🤖</div>
+  <h1 class="login-title">RoboControl</h1>
+  <p class="login-tagline">Mars Surface Ops · Unit 01</p>
+
+  {% if status == "pending" %}
+  <p class="status-msg info">Your account is awaiting admin approval.</p>
+  {% elif status == "revoked" %}
+  <p class="status-msg error">Access denied. Contact the administrator.</p>
+  {% elif status == "error" %}
+  <p class="status-msg error">Authentication error. Please try again.</p>
+  {% elif status == "invalid" %}
+  <p class="status-msg error">Invalid username or password.</p>
+  {% endif %}
+
+  <form method="post" action="/login">
+    <div class="field">
+      <label for="username">Username</label>
+      <input type="text" id="username" name="username"
+             autocomplete="username" required autofocus placeholder="admin">
+    </div>
+    <div class="field">
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password"
+             autocomplete="current-password" required placeholder="••••••••">
+    </div>
+    <button type="submit" class="btn-primary">Sign in</button>
+  </form>
+
+  {% if github_enabled %}
+  <div class="divider">or</div>
+  <a href="/auth/github" class="github-btn">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
+    </svg>
+    Continue with GitHub
+  </a>
+  {% endif %}
+
+  <div class="status-indicator">
+    <span class="status-dot" id="ping-dot"></span>
+    <span id="ping-label">Connecting…</span>
+  </div>
+</div>
+
+<p class="login-footer">Personal project, unaffiliated with NASA/SpaceX · admin@ibrain.dev</p>
+
+<script>
+/* ── Ping status (real connectivity check, polled every 5s) ──────── */
+(function ping() {
+  var dot = document.getElementById('ping-dot');
+  var lbl = document.getElementById('ping-label');
+  fetch('/api/ping').then(function(r) {
+    if (r.ok) { dot.className = 'status-dot ok'; lbl.textContent = 'All systems nominal'; }
+    else       { throw new Error(); }
+  }).catch(function() {
+    dot.className = 'status-dot error';
+    lbl.textContent = 'Robot unreachable';
+  }).finally(function() { setTimeout(ping, 5000); });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,38 @@
+<h2>Camera</h2>
+
+<div class="camera-stream">
+  {% if camera_available %}
+  <img id="cam-stream" src="/api/camera/stream"
+       style="width:100%;border-radius:10px;background:#111;display:block;"
+       alt="Live camera feed"
+       onerror="onStreamError('cam-stream')"
+       onload="onStreamLoad('cam-stream')">
+  <div id="cam-stream-overlay" class="stream-overlay" style="display:none">
+    <button onclick="reconnectStreams()" class="stream-reconnect-btn" title="Reconnect camera">↺</button>
+  </div>
+  <button id="cam-stream-corner" class="stream-corner-btn"
+          onclick="reconnectStreams()" title="Refresh stream">↺</button>
+  {% elif camera_stream_url %}
+  <iframe src="{{ camera_stream_url }}" scrolling="no" title="Camera stream"></iframe>
+  {% else %}
+  <div class="camera-placeholder">
+    📷 No camera detected — connect a Pi CSI camera or set CAMERA_STREAM_URL in .env
+  </div>
+  {% endif %}
+</div>
+
+<!-- Pan / Tilt controls — hidden until servo implementation is ready -->
+<!--
+<h3 style="margin-top: 1.5rem; text-align: center;">Camera Pan &amp; Tilt</h3>
+<div class="pantilt-grid">
+  <button class="pt-btn" onclick="sendCamera('upleft')"   aria-label="Up Left">↖</button>
+  <button class="pt-btn" onclick="sendCamera('up')"       aria-label="Up">↑</button>
+  <button class="pt-btn" onclick="sendCamera('upright')"  aria-label="Up Right">↗</button>
+  <button class="pt-btn" onclick="sendCamera('left')"     aria-label="Left">←</button>
+  <button class="pt-btn center-btn" onclick="sendCamera('center')" aria-label="Center">⊙</button>
+  <button class="pt-btn" onclick="sendCamera('right')"    aria-label="Right">→</button>
+  <button class="pt-btn" onclick="sendCamera('downleft')" aria-label="Down Left">↙</button>
+  <button class="pt-btn" onclick="sendCamera('down')"     aria-label="Down">↓</button>
+  <button class="pt-btn" onclick="sendCamera('downright')" aria-label="Down Right">↘</button>
+</div>
+-->

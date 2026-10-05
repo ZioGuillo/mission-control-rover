@@ -1,0 +1,82 @@
+<div class="telemetry-grid">
+
+  <!-- CPU -->
+  <div class="telemetry-card">
+    <div class="tel-label">CPU</div>
+    <div class="tel-value" id="tel-cpu">—</div>
+    <div class="tel-sub">
+      <div class="tel-bar-track"><div class="tel-bar-fill" id="tel-cpu-bar" style="width:0%"></div></div>
+    </div>
+  </div>
+
+  <!-- RAM -->
+  <div class="telemetry-card">
+    <div class="tel-label">RAM</div>
+    <div class="tel-value" id="tel-ram">—</div>
+    <div class="tel-sub">
+      <div class="tel-bar-track"><div class="tel-bar-fill" id="tel-ram-bar" style="width:0%"></div></div>
+    </div>
+  </div>
+
+  <!-- Motor battery -->
+  <div class="telemetry-card">
+    <div class="tel-label">Motor Battery (9V)</div>
+    <div class="tel-value" id="tel-battery-motor" style="font-size:1rem;padding-top:.3rem">—</div>
+    <div class="tel-sub">powers motors</div>
+  </div>
+
+  {% if gpu_available %}
+  <!-- GPU -->
+  <div class="telemetry-card">
+    <div class="tel-label">GPU</div>
+    <div class="tel-value" id="tel-gpu">—</div>
+    <div class="tel-sub">
+      <div class="tel-bar-track"><div class="tel-bar-fill" id="tel-gpu-bar" style="width:0%"></div></div>
+      <span id="tel-gpu-clock" style="display:inline-block;margin-top:0.35rem;font-family:var(--font-mono)"></span>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Board battery -->
+  <div class="telemetry-card">
+    <div class="tel-label" id="tel-battery-board-label">Board Battery</div>
+    <div class="tel-value" id="tel-battery-pi" style="font-size:1rem;padding-top:.3rem">—</div>
+    <div class="tel-sub" id="tel-battery-board-sub">powers board</div>
+  </div>
+
+  <!-- Uptime -->
+  <div class="telemetry-card">
+    <div class="tel-label">Uptime</div>
+    <div class="tel-value" id="tel-uptime">—</div>
+  </div>
+
+  <!-- Last command latency -->
+  <div class="telemetry-card">
+    <div class="tel-label">Last cmd latency</div>
+    <div class="tel-value" id="tel-latency">—</div>
+    <div class="tel-sub" id="tel-latency-bar"></div>
+  </div>
+
+  <!-- Commands sent -->
+  <div class="telemetry-card">
+    <div class="tel-label">Commands sent</div>
+    <div class="tel-value" id="tel-commands">—</div>
+  </div>
+
+  <!-- Obstacles -->
+  <div class="telemetry-card">
+    <div class="tel-label">Obstacles hit</div>
+    <div class="tel-value" id="tel-obstacles">—</div>
+    <div class="tel-sub" id="tel-last-obstacle"></div>
+  </div>
+
+  <!-- Distance -->
+  <div class="telemetry-card">
+    <div class="tel-label">Est. distance</div>
+    <div class="tel-value" id="tel-distance">—</div>
+    <div class="tel-sub">approximate</div>
+  </div>
+
+</div>
+
+<p class="tel-note">Stats reset on server restart. Distance is estimated (no wheel encoders). Battery voltage display requires an ADC module.</p>

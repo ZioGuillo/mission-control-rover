@@ -1,0 +1,21 @@
+[Unit]
+Description=RoboControl WiFi Connect fallback (captive portal WiFi setup)
+After=NetworkManager.service dbus.service wifi-provision.service
+Wants=NetworkManager.service
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+# PORTAL_SSID / PORTAL_PASSPHRASE in .env override the wrapper script's
+# defaults (SSID "RoboCar-Setup", no passphrase) — see .env.example.
+EnvironmentFile=-/home/pi/robocontrol/.env
+ExecStart=/home/pi/robocontrol/scripts/wifi-connect-wrapper.sh
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=wifi-connect-fallback
+
+[Install]
+WantedBy=multi-user.target

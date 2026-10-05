@@ -1,0 +1,16 @@
+# Run from anywhere: docker compose -f docker/docker-compose.yml up --build
+# Then open http://localhost:8000 — login admin / admin (change it on first login).
+services:
+  robocar-sim:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - SIMULATE=true
+    volumes:
+      - robocar-sim-data:/data
+
+volumes:
+  robocar-sim-data:

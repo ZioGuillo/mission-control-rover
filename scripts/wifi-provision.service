@@ -1,0 +1,18 @@
+[Unit]
+Description=Robocontrol WiFi Provisioning
+# Run before the network stack brings interfaces online
+Before=network-online.target NetworkManager-wait-online.service
+After=NetworkManager.service dbus.service
+# Don't fail if already connected
+ConditionPathExists=!/var/lib/robocontrol/wifi-provisioned
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/home/pi/robocontrol/scripts/wifi_provision.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=wifi-provision
+
+[Install]
+WantedBy=multi-user.target
