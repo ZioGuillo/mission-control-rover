@@ -112,6 +112,18 @@ USB     → USB webcam         (if using)
 
 **WiFi setup** ([Section 3](#3-wifi-setup)) depends on NetworkManager being the active network manager. That's the Raspberry Pi OS Bookworm default, matching what this whole hardware layer assumes; JetPack's Ubuntu-based images typically ship it too, but I can't confirm that for your specific Jetson image — check with `systemctl status NetworkManager` before relying on it.
 
+**Python version on an original Jetson Nano:** this project requires Python 3.10+ (see `pyproject.toml`). JetPack 6 (Ubuntu 22.04 — Jetson Orin Nano/NX) ships Python 3.10 as `python3` by default, so there's nothing to do. The **original Jetson Nano's** last supported release, **JetPack 4.6 (Ubuntu 18.04), ships Python 3.6** — too old for this project's dependencies (numpy, pydantic-settings, etc. all require 3.8+/3.9+). `scripts/install.sh` now detects this and refuses to proceed with a clear error instead of silently building a broken venv. To fix it: install a newer Python **alongside** the system one — don't repoint `/usr/bin/python3`, since `apt` and other system tools on Ubuntu 18.04 depend on it staying 3.6:
+
+```bash
+curl https://pyenv.run | bash
+# add pyenv's init lines to ~/.bashrc per its own install output, then:
+sudo apt install -y build-essential libssl-dev zlib1g-dev libbz2-dev \
+  libreadline-dev libsqlite3-dev libffi-dev liblzma-dev
+pyenv install 3.10.14   # compiles on-device — budget 45-90 min on a Nano, consider adding swap first
+```
+
+Re-run `scripts/install.sh` afterward — it picks up the pyenv-installed interpreter automatically.
+
 **Testing without any hardware at all:** see [`docker/README.md`](docker/README.md) — `docker compose -f docker/docker-compose.yml up --build` runs the full dashboard with simulated motors/sonar/camera so you can try changes before touching a real board.
 
 ---

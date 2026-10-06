@@ -40,9 +40,61 @@ echo "Arch  : $ARCH"
 echo "Board : $BOARD_MODEL"
 echo ""
 
+# ── Python interpreter selection ───────────────────────────────────────
+# This project requires Python 3.10+ (pyproject.toml). Raspberry Pi OS
+# Bookworm and JetPack 6 (Ubuntu 22.04) ship this as `python3` already.
+# JetPack 4.6 — the original Jetson Nano's last supported release, Ubuntu
+# 18.04 — ships Python 3.6 as `python3`, which is too old: pip would later
+# fail resolving numpy>=1.26 / pydantic-settings>=2.2 against it. Rather
+# than creating a venv that breaks two steps later, look for a newer
+# interpreter first (already on PATH, or installed via pyenv) and fail
+# clearly with instructions if there isn't one.
+find_python() {
+    for candidate in python3.12 python3.11 python3.10 python3; do
+        if command -v "$candidate" &>/dev/null; then
+            ver="$("$candidate" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || echo "0.0")"
+            major="${ver%%.*}"; minor="${ver##*.}"
+            if [ "$major" -eq 3 ] && [ "$minor" -ge 10 ]; then
+                echo "$candidate"
+                return 0
+            fi
+        fi
+    done
+    # A pyenv install isn't on PATH in a non-interactive shell unless its
+    # init lines ran — check its version directory directly as a fallback.
+    if [ -d "$HOME/.pyenv/versions" ]; then
+        newest="$(ls "$HOME/.pyenv/versions" 2>/dev/null | sort -V | tail -1)"
+        if [ -n "$newest" ] && [ -x "$HOME/.pyenv/versions/$newest/bin/python3" ]; then
+            echo "$HOME/.pyenv/versions/$newest/bin/python3"
+            return 0
+        fi
+    fi
+    return 1
+}
+
+echo "→ Looking for a Python 3.10+ interpreter"
+if ! PYTHON_BIN="$(find_python)"; then
+    echo ""
+    echo "ERROR: no Python 3.10+ interpreter found (system python3 is $(python3 --version 2>&1))."
+    echo ""
+    echo "  Don't replace /usr/bin/python3 to fix this — apt and other system"
+    echo "  tools on Ubuntu 18.04/20.04 depend on it staying at its original"
+    echo "  version. Install a newer interpreter alongside it instead:"
+    echo ""
+    echo "    curl https://pyenv.run | bash"
+    echo "    # add pyenv's init lines to ~/.bashrc per its own install output, then:"
+    echo "    sudo apt install -y build-essential libssl-dev zlib1g-dev libbz2-dev \\"
+    echo "      libreadline-dev libsqlite3-dev libffi-dev liblzma-dev"
+    echo "    pyenv install 3.10.14   # compiles on-device — budget 45-90 min on a Nano"
+    echo ""
+    echo "  Then re-run this script. See README → 'Supported Hardware' for details."
+    exit 1
+fi
+echo "  Using: $PYTHON_BIN ($("$PYTHON_BIN" --version 2>&1))"
+
 # ── Python virtual environment ────────────────────────────────────────
 echo "→ Creating virtual environment"
-python3 -m venv "$REPO_DIR/venv"
+"$PYTHON_BIN" -m venv "$REPO_DIR/venv"
 source "$REPO_DIR/venv/bin/activate"
 
 echo "→ Installing Python dependencies"

@@ -5,11 +5,11 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=ec2-user
-WorkingDirectory=/home/ec2-user/robocontrol
-EnvironmentFile=/home/ec2-user/robocontrol/.env
+User=pi
+WorkingDirectory=/home/pi/robocontrol
+EnvironmentFile=/home/pi/robocontrol/.env
 ExecStartPre=/bin/bash -c 'fuser -k 8000/tcp 2>/dev/null || true'
-ExecStart=/home/ec2-user/robocontrol/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+ExecStart=/home/pi/robocontrol/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=10
