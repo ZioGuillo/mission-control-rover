@@ -21,10 +21,14 @@ Pillow>=10.0.0
 psutil>=5.9.0
 prometheus-client>=0.20.0
 numpy>=1.26.0
-# ML object detection (app/hardware/ml_driver.py) — has wheels for every
-# board/Python combo we support, but ml_driver.py still degrades gracefully
-# (available = False) if the import fails or the model file is missing.
-ai-edge-litert>=2.1.0
+# ML inference backend (tflite-runtime vs ai-edge-litert) is NOT installed
+# here — it's glibc-version-dependent (ai-edge-litert's compiled .so needs
+# glibc >= 2.29; tflite-runtime works on older glibc but needs numpy<2, which
+# would be wrong to force on every board). scripts/install.sh detects glibc
+# and installs the right pair; see its "ML inference backend" section.
+# app/hardware/ml_driver.py tries tflite-runtime first, ai-edge-litert
+# second, and degrades gracefully (available = False) if neither import
+# succeeds or the model file is missing.
 # USB/V4L2 camera fallback (app/hardware/camera_driver.py) — picamera2 covers
 # Raspberry Pi CSI cameras but isn't installed here (system package, see
 # scripts/install.sh); this covers any board with a USB webcam instead,

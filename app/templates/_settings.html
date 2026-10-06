@@ -101,9 +101,9 @@
   <p style="color:#2dc653;font-size:0.85rem">Model: loaded ✓</p>
   {% elif not ml_library_available %}
   <p style="color:#e53935;font-size:0.85rem">
-    Inference library not available — <code>tflite-runtime</code> has no wheels for Python 3.13 on ARM64 yet.
-    {% if ml_model_found %}Model file is ready on disk.{% endif %}
-    Check back when <code>tflite-runtime</code> or <code>ai-edge-litert</code> publishes Python 3.13 support.
+    Inference library not available —
+    {% if ml_library_error %}<code>{{ ml_library_error }}</code>{% else %}neither <code>tflite-runtime</code> nor <code>ai-edge-litert</code> could be imported.{% endif %}
+    {% if ml_model_found %}Model file is ready on disk, waiting on the runtime.{% endif %}
   </p>
   {% else %}
   <p style="color:#f9a825;font-size:0.85rem">Model file not found — run <code>make deploy</code> on the robot.</p>

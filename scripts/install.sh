@@ -139,6 +139,39 @@ case "$BOARD_MODEL" in
         ;;
 esac
 
+# ── ML inference backend (tflite-runtime vs ai-edge-litert) ────────────
+# Which one works is a glibc question, not a board-name question: ai-edge-
+# litert's compiled libLiteRt.so needs glibc >= 2.29. Boards still on an
+# older OS generation (e.g. the original Jetson Nano's last supported
+# release, JetPack 4.6 / Ubuntu 18.04 / glibc 2.27) can't load it at all —
+# it fails at import time with "GLIBC_2.29 not found", which looks nothing
+# like a Python-version problem despite how it's easy to misread.
+# tflite-runtime works fine on older glibc, but its compiled extension is
+# built against NumPy 1.x's ABI and breaks under 2.x ("_ARRAY_API not
+# found") — so picking it also means pinning numpy<2 for this venv. Forcing
+# that pin on every board regardless of which library they actually need
+# would be wrong, so this is decided here, per-install, not in requirements.txt.
+# app/hardware/ml_driver.py tries tflite-runtime first, ai-edge-litert
+# second, and degrades gracefully if neither import succeeds.
+GLIBC_VERSION="$(getconf GNU_LIBC_VERSION 2>/dev/null | awk '{print $2}')"
+GLIBC_SUPPORTS_AI_EDGE_LITERT="$(python3 -c "
+v = '$GLIBC_VERSION'.split('.')
+try:
+    print(1 if tuple(map(int, v[:2])) >= (2, 29) else 0)
+except ValueError:
+    print(0)
+" 2>/dev/null || echo 0)"
+
+if [ "$GLIBC_SUPPORTS_AI_EDGE_LITERT" = "1" ]; then
+    echo "→ glibc $GLIBC_VERSION (>= 2.29) — installing ai-edge-litert"
+    pip install -q "ai-edge-litert>=2.1.0"
+else
+    echo "→ glibc $GLIBC_VERSION (< 2.29) — ai-edge-litert's compiled extension"
+    echo "  needs newer glibc than this OS has. Installing tflite-runtime instead"
+    echo "  (pins numpy<2 in this venv — tflite-runtime needs NumPy 1.x's ABI)."
+    pip install -q "numpy<2" "tflite-runtime>=2.13.0"
+fi
+
 # ── USB webcam permissions (OpenCV/V4L2 fallback — Jetson, generic boards) ──
 # /dev/video* is root:video 0660 on most distros. Without this, cv2.VideoCapture()
 # fails with a silent permission error that app/hardware/camera_driver.py can't

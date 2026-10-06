@@ -21,6 +21,7 @@ async def settings_page(request: Request):
         "active_tab": "settings",
         "ml_available": ml_driver.available,
         "ml_library_available": ml_driver.library_available,
+        "ml_library_error": ml_driver.library_error,
         "ml_model_found": ml_driver.model_found,
         "ml_enabled": db.get_setting("ml_detection_enabled") == "true",
     })

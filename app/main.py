@@ -183,6 +183,7 @@ async def index(request: Request):
             "github_users": [dict(u) for u in db.get_all_github_users()],
             "ml_available": ml_driver.available,
             "ml_library_available": ml_driver.library_available,
+            "ml_library_error": ml_driver.library_error,
             "ml_model_found": ml_driver.model_found,
             "ml_enabled": db.get_setting("ml_detection_enabled") == "true",
         })

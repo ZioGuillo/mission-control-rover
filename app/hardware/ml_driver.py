@@ -10,6 +10,7 @@ _log = logging.getLogger(__name__)
 
 available = False
 library_available = False
+library_error: str | None = None
 model_found = False
 enabled = False
 _interpreter = None
@@ -59,6 +60,7 @@ try:
     # detector being ready is enough, each degrades independently below.
     available = available or lego_available
 except Exception as exc:
+    library_error = str(exc)
     _log.debug("ml_driver unavailable: %s", exc)
 
 
