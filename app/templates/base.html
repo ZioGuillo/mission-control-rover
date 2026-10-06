@@ -476,24 +476,49 @@
     /* ── Forced password change modal ── */
     .pwd-modal-backdrop {
       position: fixed; inset: 0; z-index: 1000;
-      background: rgba(0,0,0,0.75);
+      background: rgba(6,7,10,0.94);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
       display: flex; align-items: center; justify-content: center;
+      padding: 1.5rem;
+      animation: pwdFadeIn 0.18s ease;
     }
+    @keyframes pwdFadeIn { from { opacity: 0; } to { opacity: 1; } }
     .pwd-modal-card {
       width: min(420px, 92vw);
       background: var(--pico-card-background-color);
       border: 1px solid var(--pico-muted-border-color);
       border-radius: 16px; padding: 2rem 1.75rem;
-      box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    }
+    .pwd-modal-card .pwd-modal-icon {
+      width: 48px; height: 48px; border-radius: 50%;
+      background: var(--pico-primary-background); color: var(--pico-primary-inverse);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.4rem; margin-bottom: 1rem;
     }
     .pwd-modal-card h2 { margin-bottom: 0.4rem; font-size: 1.25rem; }
     .pwd-modal-card p.hint {
-      color: var(--pico-muted-color); font-size: 0.88rem; margin-bottom: 1.2rem;
+      color: var(--pico-muted-color); font-size: 0.88rem; margin-bottom: 1.5rem; line-height: 1.5;
     }
     .pwd-modal-card .pwd-error {
+      display: flex; align-items: center; gap: 0.5rem;
       color: #ef9a9a; font-size: 0.85rem;
       background: rgba(229,57,53,0.12); border: 1px solid rgba(229,57,53,0.25);
-      border-radius: 8px; padding: 0.45rem 0.75rem; margin-bottom: 1rem;
+      border-radius: 8px; padding: 0.6rem 0.8rem; margin-bottom: 1.2rem;
+    }
+    .pwd-modal-card form label {
+      display: block; margin-bottom: 1.1rem; font-size: 0.92rem; font-weight: 600;
+    }
+    .pwd-modal-card form label small {
+      display: block; font-weight: 400; color: var(--pico-muted-color);
+      font-size: 0.78rem; margin-top: 0.15rem;
+    }
+    .pwd-modal-card form input {
+      margin-top: 0.4rem;
+    }
+    .pwd-modal-card form button {
+      margin-top: 0.5rem;
     }
   </style>
 </head>
@@ -606,21 +631,23 @@
 {% if user and user.must_change_password %}
 <div class="pwd-modal-backdrop">
   <div class="pwd-modal-card">
+    <div class="pwd-modal-icon">🔒</div>
     <h2>Set your password</h2>
-    <p class="hint">You're using the default password. Set a new one to continue.</p>
+    <p class="hint">You're using the default password. Set a new one to continue — you won't be able to use the dashboard until this is done.</p>
     {% if request.query_params.get('pwd_error') == 'mismatch' %}
-    <p class="pwd-error">Passwords do not match.</p>
+    <p class="pwd-error">⚠️ Passwords do not match.</p>
     {% elif request.query_params.get('pwd_error') == 'too_short' %}
-    <p class="pwd-error">Password must be at least 8 characters.</p>
+    <p class="pwd-error">⚠️ Password must be at least 8 characters.</p>
     {% endif %}
     <form method="post" action="/settings/first-password">
       <label>
         New password
-        <input type="password" name="new_password" required minlength="8" autofocus>
+        <input type="password" name="new_password" required minlength="8" autofocus autocomplete="new-password">
+        <small>At least 8 characters.</small>
       </label>
       <label>
         Confirm password
-        <input type="password" name="confirm_password" required minlength="8">
+        <input type="password" name="confirm_password" required minlength="8" autocomplete="new-password">
       </label>
       <button type="submit">Set password</button>
     </form>
