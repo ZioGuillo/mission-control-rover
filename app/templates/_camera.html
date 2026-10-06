@@ -16,7 +16,9 @@
   <iframe src="{{ camera_stream_url }}" scrolling="no" title="Camera stream"></iframe>
   {% else %}
   <div class="camera-placeholder">
-    📷 No camera detected — connect a Pi CSI camera or set CAMERA_STREAM_URL in .env
+    📷 No camera detected — connect a Pi CSI camera or USB webcam, or set CAMERA_STREAM_URL in .env.
+    Already have a USB webcam plugged in? Make sure this user is in the <code>video</code> group
+    (<code>sudo usermod -aG video $USER</code>, then restart the service).
   </div>
   {% endif %}
 </div>

@@ -139,6 +139,22 @@ case "$BOARD_MODEL" in
         ;;
 esac
 
+# ── USB webcam permissions (OpenCV/V4L2 fallback — Jetson, generic boards) ──
+# /dev/video* is root:video 0660 on most distros. Without this, cv2.VideoCapture()
+# fails with a silent permission error that app/hardware/camera_driver.py can't
+# tell apart from "no camera attached" — the UI just shows "No camera detected"
+# either way, which makes this easy to misdiagnose as a hardware problem.
+if ls /dev/video* &>/dev/null; then
+    if id -nG "$CURRENT_USER" | grep -qw video; then
+        echo "→ $CURRENT_USER already in the 'video' group — USB webcam access OK"
+    else
+        echo "→ Found /dev/video* but $CURRENT_USER isn't in the 'video' group — adding"
+        sudo usermod -aG video "$CURRENT_USER"
+        echo "  (group membership is re-checked fresh when robocontrol.service starts"
+        echo "   below, so this takes effect without needing you to log out/in)"
+    fi
+fi
+
 # ── .env ──────────────────────────────────────────────────────────────
 if [ ! -f "$REPO_DIR/.env" ]; then
     echo "→ Creating .env from .env.example"
