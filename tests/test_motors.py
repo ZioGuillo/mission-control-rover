@@ -1,6 +1,8 @@
 import time
 from unittest.mock import patch
 
+from app.routes import motors
+
 # M1: dir=1=fwd, dir=0=rev  |  M2: dir=0=fwd, dir=1=rev  (M2 wired reversed)
 
 
@@ -114,6 +116,11 @@ def test_auto_drive_forward_then_stop(client):
 
 
 def test_auto_drive_avoids_obstacle(client):
+    # Sonar reports blocked on every read — including the re-checks inside
+    # the evasion retry loop — so the obstacle never actually clears. With
+    # the retry-until-clear logic, that's a stable "blocked" steady state
+    # (not the old single-blind-turn "avoiding"), reached deterministically
+    # regardless of how many outer-loop ticks race through during the wait.
     with patch("app.routes.motors.driver.available", True), \
          patch("app.routes.motors.driver.get_distance", return_value=15.0), \
          patch("app.routes.motors.driver.set_motors"), \
@@ -123,10 +130,94 @@ def test_auto_drive_avoids_obstacle(client):
         time.sleep(0.05)
 
         status = client.get("/api/motors/auto/status").json()
-        assert status["action"] == "avoiding"
+        assert status["action"] == "blocked"
         assert status["distance_cm"] == 15.0
 
         client.post("/api/motors/auto/stop")
+
+
+def test_auto_drive_avoids_via_ml_detection_with_clear_sonar(client):
+    # Sonar's cone is narrower than the camera's view — ML can see an
+    # obstacle sonar doesn't. A large, centered detection should trigger
+    # evasion on its own, even with sonar reporting a clear path.
+    big_centered_box = {"label": "person", "score": 0.9, "box": [0.1, 0.3, 0.9, 0.7]}
+    with patch("app.routes.motors.driver.available", True), \
+         patch("app.routes.motors.driver.get_distance", return_value=float("inf")), \
+         patch("app.routes.motors.driver.set_motors"), \
+         patch("app.routes.motors.ml_driver.get_detections", return_value=[big_centered_box]), \
+         patch("app.routes.motors.time.sleep"):
+        client.post("/api/motors/auto/start")
+        time.sleep(0.05)
+
+        status = client.get("/api/motors/auto/status").json()
+        assert status["action"] == "avoiding"
+
+        client.post("/api/motors/auto/stop")
+
+
+def test_auto_drive_ignores_tiny_ml_detection(client):
+    tiny_box = {"label": "cup", "score": 0.9, "box": [0.48, 0.48, 0.52, 0.52]}
+    with patch("app.routes.motors.driver.available", True), \
+         patch("app.routes.motors.driver.get_distance", return_value=float("inf")), \
+         patch("app.routes.motors.driver.set_motors"), \
+         patch("app.routes.motors.ml_driver.get_detections", return_value=[tiny_box]), \
+         patch("app.routes.motors.time.sleep"):
+        client.post("/api/motors/auto/start")
+        time.sleep(0.05)
+
+        status = client.get("/api/motors/auto/status").json()
+        assert status["action"] == "forward"
+
+        client.post("/api/motors/auto/stop")
+
+
+def test_ml_obstacle_direction_none_when_no_detections():
+    assert motors._ml_obstacle_direction([]) is None
+
+
+def test_ml_obstacle_direction_ignores_small_detection():
+    small = {"label": "chair", "score": 0.9, "box": [0.45, 0.45, 0.55, 0.55]}
+    assert motors._ml_obstacle_direction([small]) is None
+
+
+def test_ml_obstacle_direction_ignores_large_off_center_detection():
+    # Large enough to matter, but hugging the left edge — not blocking the
+    # forward path, so this should not count as "in the way".
+    off_center = {"label": "person", "score": 0.9, "box": [0.0, 0.0, 1.0, 0.3]}
+    assert motors._ml_obstacle_direction([off_center]) is None
+
+
+def test_ml_obstacle_direction_returns_right_for_obstacle_on_left():
+    left_box = {"label": "person", "score": 0.9, "box": [0.1, 0.1, 0.9, 0.5]}
+    assert motors._ml_obstacle_direction([left_box]) == "right"
+
+
+def test_ml_obstacle_direction_returns_left_for_obstacle_on_right():
+    right_box = {"label": "person", "score": 0.9, "box": [0.1, 0.5, 0.9, 0.9]}
+    assert motors._ml_obstacle_direction([right_box]) == "left"
+
+
+def test_evade_until_clear_returns_true_when_path_clears_within_attempts():
+    with patch("app.routes.motors.driver.get_distance", side_effect=[15.0, 100.0]), \
+         patch("app.routes.motors.driver.set_motors") as mock_set, \
+         patch("app.routes.motors.settings.obstacle_threshold_cm", 20.0), \
+         patch("app.routes.motors.time.sleep"):
+        result = motors._evade_until_clear("right", 0.8)
+
+    assert result is True
+    turn_commands = [c.args for c in mock_set.call_args_list if c.args != (0, 0, 0, 0)]
+    assert turn_commands == [(0.4, motors._M1_FWD, 0.4, motors._M2_REV)] * 2
+
+
+def test_evade_until_clear_returns_false_after_max_attempts():
+    with patch("app.routes.motors.driver.get_distance", return_value=15.0) as mock_dist, \
+         patch("app.routes.motors.driver.set_motors"), \
+         patch("app.routes.motors.settings.obstacle_threshold_cm", 20.0), \
+         patch("app.routes.motors.time.sleep"):
+        result = motors._evade_until_clear("left", 0.8)
+
+    assert result is False
+    assert mock_dist.call_count == motors._AUTO_MAX_EVADE_ATTEMPTS
 
 
 def test_auto_start_twice_is_idempotent(client):
