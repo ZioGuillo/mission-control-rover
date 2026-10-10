@@ -1,0 +1,11 @@
+[Unit]
+Description=RoboControl WiFi watchdog (reconnect if NetworkManager gave up)
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/home/pi/robocontrol/scripts/wifi-watchdog.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=wifi-watchdog

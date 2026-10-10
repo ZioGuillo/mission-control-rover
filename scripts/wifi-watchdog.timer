@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the RoboControl WiFi watchdog every minute
+
+[Timer]
+# Give boot-time WiFi setup (wifi-provision, wifi-connect-fallback) time to
+# finish before the watchdog starts acting.
+OnBootSec=3min
+OnUnitActiveSec=1min
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target

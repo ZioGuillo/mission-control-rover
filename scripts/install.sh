@@ -263,6 +263,18 @@ sudo systemctl enable wifi-connect-fallback.service
 echo "  (not started now — it only matters on a boot with no working network;"
 echo "   you're clearly already connected if you're running this over SSH)"
 
+# ── WiFi watchdog (reconnect when NetworkManager gives up mid-run) ─────
+# wifi-connect-fallback only helps at boot. If WiFi drops later and a
+# reconnect handshake times out, NetworkManager can mark the saved network
+# 'no-secrets' and never retry — see scripts/wifi-watchdog.sh.
+echo "→ Installing wifi-watchdog.timer"
+chmod +x "$REPO_DIR/scripts/wifi-watchdog.sh"
+sudo cp "$REPO_DIR/scripts/wifi-watchdog.service" /etc/systemd/system/wifi-watchdog.service
+sudo cp "$REPO_DIR/scripts/wifi-watchdog.timer"   /etc/systemd/system/wifi-watchdog.timer
+sudo sed -i "s|/home/pi/robocontrol|$REPO_DIR|g" /etc/systemd/system/wifi-watchdog.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now wifi-watchdog.timer
+
 # ── Cloudflare Tunnel provisioning service ────────────────────────────
 echo "→ Installing cloudflared-provision.service"
 sudo cp "$REPO_DIR/scripts/cloudflared-provision.service" \
@@ -330,7 +342,9 @@ case "$BOARD_MODEL" in
         if [ -f "$EXTLINUX" ] && ! grep -q 'pcie_aspm=off' "$EXTLINUX"; then
             echo "→ Adding pcie_aspm=off to $EXTLINUX (takes effect next reboot)"
             sudo cp "$EXTLINUX" "$EXTLINUX.robocontrol.bak"
-            sudo sed -i '/^\s*APPEND/ s/$/ pcie_aspm=off/' "$EXTLINUX"
+            # Also drop `quiet` so a hang during boot shows where it stopped
+            # instead of sitting silently on the NVIDIA logo.
+            sudo sed -i '/^\s*APPEND/ { s/ quiet\b//; s/$/ pcie_aspm=off/ }' "$EXTLINUX"
             echo "  Backup: $EXTLINUX.robocontrol.bak"
         fi
         ;;
