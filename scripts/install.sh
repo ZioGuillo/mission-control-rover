@@ -282,6 +282,100 @@ else
         echo "  WARNING: tunnel provisioning failed — check credentials and run again"
 fi
 
+# ── Crash hardening ───────────────────────────────────────────────────
+# A Jetson Nano on this rover once hung and then stuck at the boot logo after
+# days of `pcieport 0000:00:01.0: PCIe Bus Error: severity=Corrected` spam.
+# Each step below closes one way a long-running SD-card board ends up there:
+# logs filling the root filesystem, the ML model exhausting RAM, or a kernel
+# hang/panic that leaves the board frozen instead of rebooting.
+
+# Cap journald so log spam can never fill the SD card.
+echo "→ Capping systemd journal size (200M on disk)"
+sudo mkdir -p /etc/systemd/journald.conf.d
+sudo tee /etc/systemd/journald.conf.d/robocontrol.conf >/dev/null <<'EOF'
+[Journal]
+SystemMaxUse=200M
+SystemMaxFileSize=50M
+RuntimeMaxUse=50M
+EOF
+sudo systemctl restart systemd-journald
+
+# rsyslog duplicates kernel messages into /var/log/syslog and kern.log, which
+# by default only rotate on a schedule — add a size cap so a flood can't grow
+# them unbounded between rotations.
+if [ -f /etc/logrotate.d/rsyslog ] && ! grep -q maxsize /etc/logrotate.d/rsyslog; then
+    echo "→ Adding maxsize 100M to rsyslog logrotate rules"
+    sudo cp /etc/logrotate.d/rsyslog /etc/logrotate.d/rsyslog.robocontrol.bak
+    sudo sed -i 's/^\(\s*\)rotate \([0-9]*\)$/\1rotate \2\n\1maxsize 100M/' /etc/logrotate.d/rsyslog
+    # Backups in logrotate.d are read as config too — keep it out of there.
+    sudo mv /etc/logrotate.d/rsyslog.robocontrol.bak /var/lib/robocontrol/logrotate-rsyslog.bak
+fi
+if [ -d /etc/cron.hourly ] && [ ! -e /etc/cron.hourly/logrotate ]; then
+    # Daily rotation is too slow to catch a flood; maxsize only applies when
+    # logrotate actually runs.
+    sudo tee /etc/cron.hourly/logrotate >/dev/null <<'EOF'
+#!/bin/sh
+/usr/sbin/logrotate /etc/logrotate.conf
+EOF
+    sudo chmod +x /etc/cron.hourly/logrotate
+fi
+
+# Jetson only: the PCIe Bus Error spam on 00:01.0 (the M.2 slot) comes from
+# link power management (ASPM) on the Tegra root port. Turning ASPM off is the
+# standard fix. extlinux.conf is what the bootloader reads, so back it up and
+# only append to APPEND lines — a malformed file here means no boot at all.
+EXTLINUX=/boot/extlinux/extlinux.conf
+case "$BOARD_MODEL" in
+    *"Jetson"*|*"NVIDIA"*)
+        if [ -f "$EXTLINUX" ] && ! grep -q 'pcie_aspm=off' "$EXTLINUX"; then
+            echo "→ Adding pcie_aspm=off to $EXTLINUX (takes effect next reboot)"
+            sudo cp "$EXTLINUX" "$EXTLINUX.robocontrol.bak"
+            sudo sed -i '/^\s*APPEND/ s/$/ pcie_aspm=off/' "$EXTLINUX"
+            echo "  Backup: $EXTLINUX.robocontrol.bak"
+        fi
+        ;;
+esac
+
+# Reboot automatically on kernel panic instead of sitting frozen.
+echo "→ Setting kernel.panic=10 (auto-reboot 10s after a kernel panic)"
+echo "kernel.panic = 10" | sudo tee /etc/sysctl.d/90-robocontrol.conf >/dev/null
+sudo sysctl -q -p /etc/sysctl.d/90-robocontrol.conf
+
+# Hardware watchdog: systemd pets it; if the whole system hangs (not just the
+# app), the SoC resets itself. Jetson (tegra_wdt) and Pi (bcm2835_wdt) both
+# expose /dev/watchdog; 15s is within both boards' hardware maximum.
+if [ -e /dev/watchdog ]; then
+    echo "→ Enabling hardware watchdog via systemd (RuntimeWatchdogSec=15)"
+    sudo mkdir -p /etc/systemd/system.conf.d
+    sudo tee /etc/systemd/system.conf.d/robocontrol-watchdog.conf >/dev/null <<'EOF'
+[Manager]
+RuntimeWatchdogSec=15
+ShutdownWatchdogSec=2min
+EOF
+    sudo systemctl daemon-reexec
+else
+    echo "→ No /dev/watchdog — skipping hardware watchdog"
+fi
+
+# Swap headroom for the ML model. JetPack ships zram (compressed RAM) only,
+# which doesn't help once real RAM is exhausted. Skip if a swap file already
+# exists (e.g. Raspberry Pi OS's dphys-swapfile) or the card is short on space.
+if ! awk 'NR>1 && $2=="file"' /proc/swaps | grep -q .; then
+    FREE_KB="$(df --output=avail / | tail -1)"
+    if [ "$FREE_KB" -ge $((6 * 1024 * 1024)) ]; then
+        echo "→ Creating 2G /swapfile"
+        sudo fallocate -l 2G /swapfile
+        sudo chmod 600 /swapfile
+        sudo mkswap /swapfile >/dev/null
+        sudo swapon /swapfile
+        grep -q '^/swapfile ' /etc/fstab || echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab >/dev/null
+    else
+        echo "→ Less than 6G free on / — skipping swap file"
+    fi
+else
+    echo "→ Swap file already present — skipping"
+fi
+
 # ── robocontrol systemd service ───────────────────────────────────────
 echo "→ Installing robocontrol.service"
 SERVICE_SRC="$REPO_DIR/scripts/robocontrol.service"

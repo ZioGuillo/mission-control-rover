@@ -12,6 +12,12 @@ ExecStartPre=/bin/bash -c 'fuser -k 8000/tcp 2>/dev/null || true'
 ExecStart=/home/pi/robocontrol/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
 Restart=on-failure
 RestartSec=5
+# Cap the app's RAM so a runaway ML model gets the app OOM-killed and
+# restarted, instead of starving the whole board. MemoryLimit= is the
+# cgroup-v1 spelling (JetPack 4.x / Ubuntu 18.04); MemoryMax= is cgroup v2.
+MemoryLimit=70%
+MemoryMax=70%
+OOMScoreAdjust=500
 TimeoutStopSec=10
 KillMode=mixed
 StandardOutput=journal
