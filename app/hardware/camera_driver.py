@@ -1,6 +1,8 @@
+import glob
 import io
 import logging
 import math
+import sys
 import threading
 import time
 
@@ -17,6 +19,45 @@ _latest_frame: bytes | None = None
 _frame_counter: int = 0
 _running = False
 _backend: str = "none"
+_cv_cam = None
+
+# USB camera hot-plug (OpenCV backend): this many failed reads in a row means
+# the camera is gone; while it's gone, look for one again this often.
+_READ_FAIL_LIMIT = 20
+_READ_RETRY_SECONDS = 0.05
+_REDETECT_SECONDS = 2.0
+
+
+def _video_device_indexes() -> list[int]:
+    """V4L2 camera indexes present right now, from /dev/videoN."""
+    idx = []
+    for path in glob.glob("/dev/video*"):
+        suffix = path[len("/dev/video"):]
+        if suffix.isdigit():
+            idx.append(int(suffix))
+    return sorted(idx)
+
+
+def _open_opencv(allow_default_index: bool = False):
+    """Open the first working V4L2 camera, or return None.
+
+    allow_default_index: off Linux (dev machines) there's no /dev/video*, so
+    the one-time startup check falls back to OpenCV's index 0. The background
+    rescan never does — on macOS opening a camera from a non-main thread
+    crashes the interpreter."""
+    import cv2
+
+    indexes = _video_device_indexes()
+    if not indexes and allow_default_index and not sys.platform.startswith("linux"):
+        indexes = [0]
+    for i in indexes:
+        cap = cv2.VideoCapture(i)
+        if cap.isOpened():
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            return cap
+        cap.release()
+    return None
 
 # Real camera hardware is tried first regardless of SIMULATE — SIMULATE
 # fakes drivers that would otherwise need real motor/sonar/servo hardware,
@@ -39,23 +80,19 @@ except Exception:
 # Fallback for boards without picamera2/libcamera (e.g. Jetson Nano, or a
 # Pi with a USB webcam instead of a CSI camera): any V4L2-visible camera
 # via OpenCV. Requires opencv-python-headless — see requirements.txt.
+# The backend is chosen even with no camera plugged in yet: the capture loop
+# keeps looking, so a USB camera can be plugged in (or re-plugged) at any time.
 if not available:
     try:
-        import cv2
+        import cv2  # noqa: F401 — only checking that OpenCV is importable
 
-        _cv_cam = cv2.VideoCapture(0)
-        if _cv_cam.isOpened():
-            _cv_cam.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-            _cv_cam.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-            available = True
-            _backend = "opencv"
-        else:
-            _cv_cam.release()
-            _cv_cam = None
+        _backend = "opencv"
+        _cv_cam = _open_opencv(allow_default_index=True)
+        available = _cv_cam is not None
     except Exception:
         pass
 
-if not available and settings.simulate:
+if _backend in ("none", "opencv") and not available and settings.simulate:
     # No real camera found — synthetic frames so the camera tab and
     # ML-overlay UI are still usable without hardware. See README "Local
     # testing without hardware".
@@ -90,16 +127,54 @@ def _picamera2_loop() -> None:
             pass
 
 
+def _set_available(value: bool) -> None:
+    global available
+    available = value
+    try:
+        from app import metrics as m
+        m.HW_AVAILABLE.labels(component="camera").set(1 if value else 0)
+    except Exception:
+        pass
+
+
 def _opencv_loop() -> None:
-    global _latest_frame, _frame_counter, _running
+    """Capture from a USB/V4L2 camera, surviving unplug and re-plug: after
+    _READ_FAIL_LIMIT failed reads in a row the camera counts as gone — it's
+    released, marked unavailable and its last frame dropped (so ML inference
+    doesn't keep acting on a frozen image) — then /dev/video* is rescanned
+    every _REDETECT_SECONDS until a camera opens again."""
+    global _latest_frame, _frame_counter, _running, _cv_cam
     import cv2
 
+    fails = 0
     try:
         while _running:
+            if _cv_cam is None:
+                _cv_cam = _open_opencv()
+                if _cv_cam is None:
+                    time.sleep(_REDETECT_SECONDS)
+                    continue
+                _log.info("camera connected")
+                _set_available(True)
+                fails = 0
+
             ok, frame = _cv_cam.read()
             if not ok:
-                time.sleep(0.05)
+                fails += 1
+                if fails >= _READ_FAIL_LIMIT:
+                    _log.warning("camera disconnected — will keep looking for it")
+                    try:
+                        _cv_cam.release()
+                    except Exception:
+                        pass
+                    _cv_cam = None
+                    with _lock:
+                        _latest_frame = None
+                    _set_available(False)
+                    continue
+                time.sleep(_READ_RETRY_SECONDS)
                 continue
+            fails = 0
             ok2, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
             if ok2:
                 with _lock:
@@ -109,10 +184,12 @@ def _opencv_loop() -> None:
         _log.error("camera capture loop error: %s", exc)
         _running = False
     finally:
-        try:
-            _cv_cam.release()
-        except Exception:
-            pass
+        if _cv_cam is not None:
+            try:
+                _cv_cam.release()
+            except Exception:
+                pass
+            _cv_cam = None
 
 
 def _simulated_loop() -> None:
@@ -154,7 +231,11 @@ def _capture_loop() -> None:
 
 def start() -> None:
     global _running
-    if not available or _running:
+    if _running:
+        return
+    # The OpenCV loop also runs with no camera yet — it waits for one to be
+    # plugged in. Other backends need a camera that's already there.
+    if not available and _backend != "opencv":
         return
     _running = True
     threading.Thread(target=_capture_loop, daemon=True).start()

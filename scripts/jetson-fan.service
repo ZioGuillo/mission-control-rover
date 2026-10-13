@@ -1,0 +1,18 @@
+[Unit]
+Description=RoboControl Jetson fan control (FAN_MODE in .env: 1 = auto, 2 = always on)
+ConditionPathExists=/sys/devices/pwm-fan/target_pwm
+
+[Service]
+Type=simple
+EnvironmentFile=-/home/pi/robocontrol/.env
+ExecStart=/home/pi/robocontrol/scripts/jetson-fan.sh
+# Back to kernel control however the script ends (stop, crash, kill).
+ExecStopPost=/bin/sh -c 'echo 1 > /sys/devices/pwm-fan/temp_control 2>/dev/null || true'
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=jetson-fan
+
+[Install]
+WantedBy=multi-user.target

@@ -350,6 +350,21 @@ case "$BOARD_MODEL" in
         ;;
 esac
 
+# Jetson only: fan on the board's own 4-pin header (J15), not the case's
+# fan port — the 40-pin header's 5V pins are always live while the charger
+# is plugged in, so a fan there never turns off. FAN_MODE in .env picks
+# auto (1, default) or always-spinning (2); see scripts/jetson-fan.sh.
+if [ -e /sys/devices/pwm-fan/target_pwm ]; then
+    echo "→ Installing jetson-fan.service (FAN_MODE in .env, default 1 = auto)"
+    chmod +x "$REPO_DIR/scripts/jetson-fan.sh" "$REPO_DIR/scripts/fan-mode.sh"
+    grep -q '^FAN_MODE=' "$REPO_DIR/.env" || printf '\nFAN_MODE=1\n' >> "$REPO_DIR/.env"
+    sudo cp "$REPO_DIR/scripts/jetson-fan.service" /etc/systemd/system/jetson-fan.service
+    sudo sed -i "s|/home/pi/robocontrol|$REPO_DIR|g" /etc/systemd/system/jetson-fan.service
+    sudo systemctl daemon-reload
+    sudo systemctl enable jetson-fan.service
+    sudo systemctl restart jetson-fan.service
+fi
+
 # Reboot automatically on kernel panic instead of sitting frozen.
 echo "→ Setting kernel.panic=10 (auto-reboot 10s after a kernel panic)"
 echo "kernel.panic = 10" | sudo tee /etc/sysctl.d/90-robocontrol.conf >/dev/null

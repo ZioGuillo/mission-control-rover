@@ -45,7 +45,9 @@ class Settings(BaseSettings):
     # accidentally ignores its actual hardware.
     simulate: bool = False
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    # .env is shared with the systemd services (WiFi portal, Cloudflare
+    # provisioning, Jetson fan): ignore their keys instead of refusing to start.
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     @field_validator("camera_stream_url")
     @classmethod
