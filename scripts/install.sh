@@ -40,6 +40,10 @@ echo "Arch  : $ARCH"
 echo "Board : $BOARD_MODEL"
 echo ""
 
+# systemd runs these scripts directly, so they must be executable — copies
+# made through iCloud, zip files or some scp setups drop the exec bit.
+chmod +x "$REPO_DIR"/scripts/*.sh "$REPO_DIR"/scripts/*.py 2>/dev/null || true
+
 # ── Python interpreter selection ───────────────────────────────────────
 # This project requires Python 3.10+ (pyproject.toml). Raspberry Pi OS
 # Bookworm and JetPack 6 (Ubuntu 22.04) ship this as `python3` already.
@@ -129,7 +133,7 @@ case "$BOARD_MODEL" in
         pip install -q "rpi-lgpio>=0.6"
         ;;
     *"Raspberry Pi"*)
-        echo "→ Detected Raspberry Pi (3/4) — installing RPi.GPIO"
+        echo "→ Detected Raspberry Pi (Zero/2/3/4) — installing RPi.GPIO"
         pip install -q "RPi.GPIO>=0.7.1"
         ;;
     *"Jetson"*|*"NVIDIA"*)
@@ -456,7 +460,9 @@ sudo sed -i "s|/home/pi/robocontrol|$REPO_DIR|g" "$SERVICE_DST"
 sudo sed -i "s|User=pi|User=$CURRENT_USER|g"      "$SERVICE_DST"
 sudo systemctl daemon-reload
 sudo systemctl enable robocontrol
-sudo systemctl start  robocontrol
+# restart, not start: on a re-install the service is already running the
+# previous code, and `start` would leave it that way until the next reboot.
+sudo systemctl restart robocontrol
 
 # ── done ─────────────────────────────────────────────────────────────
 echo ""
