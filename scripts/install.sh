@@ -93,13 +93,32 @@ fi
 echo "  Using: $PYTHON_BIN ($("$PYTHON_BIN" --version 2>&1))"
 
 # ── Python virtual environment ────────────────────────────────────────
-echo "→ Creating virtual environment"
-"$PYTHON_BIN" -m venv "$REPO_DIR/venv"
+# On a Raspberry Pi the camera library (picamera2) is an apt package, so the
+# venv must see system site-packages. Re-running `python -m venv` on an
+# existing venv rewrites pyvenv.cfg, so the flag has to be passed every time
+# or a re-install silently cuts the app off from the camera.
+VENV_FLAGS=""
+case "$BOARD_MODEL" in
+    *"Raspberry Pi"*) VENV_FLAGS="--system-site-packages" ;;
+esac
+echo "→ Creating virtual environment ${VENV_FLAGS:+($VENV_FLAGS)}"
+"$PYTHON_BIN" -m venv $VENV_FLAGS "$REPO_DIR/venv"
 source "$REPO_DIR/venv/bin/activate"
 
 echo "→ Installing Python dependencies"
 pip install --upgrade pip -q
-pip install -r "$REPO_DIR/requirements.txt" -q
+# ARMv6 boards (Pi Zero / Zero W / Pi 1) have no prebuilt wheels for
+# opencv-python-headless: pip would try to compile it for hours and fail.
+# It's only the USB-webcam backend — CSI cameras there use picamera2.
+if [ "$ARCH" = "armv6l" ]; then
+    echo "  ARMv6 board — skipping opencv-python-headless (no ARMv6 wheels; CSI camera uses picamera2)"
+    REQ_FILE="$(mktemp)"
+    grep -viE '^opencv-python' "$REPO_DIR/requirements.txt" > "$REQ_FILE"
+    pip install -r "$REQ_FILE" -q
+    rm -f "$REQ_FILE"
+else
+    pip install -r "$REPO_DIR/requirements.txt" -q
+fi
 
 # ── GPIO backend — auto-detected from /proc/device-tree/model ─────────
 # app/hardware/gpio_compat.py picks whichever of these is importable at
@@ -131,6 +150,27 @@ case "$BOARD_MODEL" in
         echo "→ Installing picamera2 system package"
         sudo apt install -y python3-picamera2 --no-install-recommends -q 2>/dev/null || \
             echo "  (picamera2 not available — CSI camera disabled)"
+
+        # A camera overlay forced in config.txt (e.g. dtoverlay=imx219) overrides
+        # camera_auto_detect, so any other sensor — like the OV5647 in most
+        # 5 MP / night-vision modules — is never found. If no camera responds
+        # and a sensor is forced, drop the forced line and let the Pi detect
+        # it. A forced overlay that already works is left alone.
+        CONFIG_TXT=/boot/firmware/config.txt
+        [ -f "$CONFIG_TXT" ] || CONFIG_TXT=/boot/config.txt
+        FORCED_CAM='^dtoverlay=(imx219|imx477|imx708|imx296|imx500|ov5647|ov9281)([,:].*)?$'
+        if [ -f "$CONFIG_TXT" ] && grep -qE "$FORCED_CAM" "$CONFIG_TXT"; then
+            if (rpicam-hello --list-cameras 2>/dev/null || libcamera-hello --list-cameras 2>/dev/null) \
+                    | grep -qE '^[0-9]+ : '; then
+                echo "  CSI camera detected — keeping the camera overlay set in $CONFIG_TXT"
+            else
+                echo "→ No CSI camera responds and $CONFIG_TXT forces a sensor — switching to auto-detect"
+                sudo cp "$CONFIG_TXT" "$CONFIG_TXT.robocontrol.bak"
+                sudo sed -i -E "s/$FORCED_CAM/# & (disabled by robocontrol install: camera_auto_detect finds the sensor)/" "$CONFIG_TXT"
+                grep -qE '^camera_auto_detect=1' "$CONFIG_TXT" || echo "camera_auto_detect=1" | sudo tee -a "$CONFIG_TXT" >/dev/null
+                echo "  Backup: $CONFIG_TXT.robocontrol.bak — REBOOT for the camera change to take effect"
+            fi
+        fi
         ;;
     *)
         echo "→ Not a Raspberry Pi — skipping picamera2"
@@ -162,7 +202,9 @@ except ValueError:
     print(0)
 " 2>/dev/null || echo 0)"
 
-if [ "$GLIBC_SUPPORTS_AI_EDGE_LITERT" = "1" ]; then
+if [ "$ARCH" = "armv6l" ]; then
+    echo "→ ARMv6 board — no ML runtime builds exist for it; skipping (ML features stay off)"
+elif [ "$GLIBC_SUPPORTS_AI_EDGE_LITERT" = "1" ]; then
     echo "→ glibc $GLIBC_VERSION (>= 2.29) — installing ai-edge-litert"
     pip install -q "ai-edge-litert>=2.1.0"
 else
