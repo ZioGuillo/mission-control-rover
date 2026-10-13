@@ -8,11 +8,26 @@ from app.routes import motors
 
 def test_forward(client):
     with patch("app.routes.motors.driver.available", True), \
+         patch("app.routes.motors.driver.get_distance", return_value=100.0), \
+         patch("app.routes.motors.driver.set_motors") as mock:
+        r = client.post("/api/motors/forward", json={"speed": 0.8})
+        assert r.status_code == 200
+        assert r.json() == {"ok": True, "action": "forward", "sonar_ok": True}
+        mock.assert_called_once_with(0.8, 1, 0.8, 0)
+
+
+def test_forward_without_sonar_still_drives_and_warns(client):
+    """Graceful degradation: with the distance sensor unavailable (inf), the
+    robot keeps driving — but the response says obstacle detection is off."""
+    with patch("app.routes.motors.driver.available", True), \
          patch("app.routes.motors.driver.get_distance", return_value=float("inf")), \
          patch("app.routes.motors.driver.set_motors") as mock:
         r = client.post("/api/motors/forward", json={"speed": 0.8})
         assert r.status_code == 200
-        assert r.json() == {"ok": True, "action": "forward"}
+        data = r.json()
+        assert data["ok"] is True
+        assert data["sonar_ok"] is False
+        assert "unavailable" in data["message"].lower()
         mock.assert_called_once_with(0.8, 1, 0.8, 0)
 
 
@@ -102,12 +117,13 @@ def test_auto_drive_forward_then_stop(client):
         status = client.get("/api/motors/auto/status").json()
         assert status["running"] is True
         assert status["action"] == "forward"
+        assert status["sonar_ok"] is False  # inf = distance sensor unavailable
 
         r2 = client.post("/api/motors/auto/stop")
         assert r2.json() == {"ok": True, "running": False}
 
         status2 = client.get("/api/motors/auto/status").json()
-        assert status2 == {"running": False, "action": None, "distance_cm": None}
+        assert status2 == {"running": False, "action": None, "distance_cm": None, "sonar_ok": None}
 
         # forward motion was commanded, and the final command was a full stop
         calls = [c.args for c in mock_set.call_args_list]
@@ -266,3 +282,18 @@ def test_speed_defaults_to_config(client):
         r = client.post("/api/motors/forward")
         assert r.status_code == 200
         mock.assert_called_once_with(0.75, 1, 0.75, 0)
+
+
+def test_auto_drive_reports_sonar_ok_with_a_real_reading(client):
+    with patch("app.routes.motors.driver.available", True), \
+         patch("app.routes.motors.driver.get_distance", return_value=120.0), \
+         patch("app.routes.motors.settings.obstacle_threshold_cm", 20.0), \
+         patch("app.routes.motors.driver.set_motors"), \
+         patch("app.routes.motors.time.sleep"):
+        client.post("/api/motors/auto/start")
+        time.sleep(0.05)
+        status = client.get("/api/motors/auto/status").json()
+        client.post("/api/motors/auto/stop")
+        assert status["action"] == "forward"
+        assert status["sonar_ok"] is True
+        assert status["distance_cm"] == 120.0

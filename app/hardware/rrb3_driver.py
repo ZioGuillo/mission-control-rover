@@ -113,14 +113,21 @@ def get_distance() -> float:
         time.sleep(0.0001)
         GPIO.output(_TRIGGER_PIN, False)
 
-        count = _ECHO_TIMEOUT_LOOPS
-        while GPIO.input(_ECHO_PIN) != 1 and count > 0:
-            count -= 1
+        # A loop that runs out means no echo (sensor unplugged, pin floating)
+        # or one that never ends. Report that as unavailable: timing the
+        # timeout itself yields a ~0 cm "obstacle" that blocks driving.
+        for _ in range(_ECHO_TIMEOUT_LOOPS):
+            if GPIO.input(_ECHO_PIN) == 1:
+                break
+        else:
+            return float("inf")
         start = time.time()
 
-        count = _ECHO_TIMEOUT_LOOPS
-        while GPIO.input(_ECHO_PIN) != 0 and count > 0:
-            count -= 1
+        for _ in range(_ECHO_TIMEOUT_LOOPS):
+            if GPIO.input(_ECHO_PIN) == 0:
+                break
+        else:
+            return float("inf")
         finish = time.time()
 
         return (finish - start) / 0.000058

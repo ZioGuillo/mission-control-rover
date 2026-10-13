@@ -188,6 +188,10 @@ function beepWarning() {
   } catch (e) {}
 }
 
+// Holding "forward" re-sends the command, so warn about a missing distance
+// sensor at most once every 10 s instead of on every repeat.
+var _lastSonarWarning = 0;
+
 function sendMotor(action) {
   fetch('/api/motors/' + action, {
     method: 'POST',
@@ -200,6 +204,11 @@ function sendMotor(action) {
         stopAction();
         beepWarning();
         notify(data.message || 'Obstacle detected!', 'alert');
+      } else if (data.sonar_ok === false) {
+        if (Date.now() - _lastSonarWarning > 10000) {
+          _lastSonarWarning = Date.now();
+          notify(data.message || 'Distance sensor unavailable', 'warning');
+        }
       } else if (data.detail && !data.detail.ok) {
         notify(data.detail.message || 'Motor error', 'warning');
       }
@@ -258,7 +267,7 @@ function _autoDriveButtons() {
   return document.querySelectorAll('.autodrive-btn');
 }
 
-function _renderAutoDriveState(running, action, distanceCm) {
+function _renderAutoDriveState(running, action, distanceCm, sonarOk) {
   autoDriveRunning = running;
   _autoDriveButtons().forEach(function(btn) {
     btn.textContent = running ? '🤖 Auto-Drive   ON' : '🤖 Auto-Drive   OFF';
@@ -269,7 +278,8 @@ function _renderAutoDriveState(running, action, distanceCm) {
     if (action === 'avoiding') {
       statusText = 'avoiding obstacle (' + distanceCm + ' cm)';
     } else if (action === 'forward') {
-      statusText = distanceCm != null ? 'driving forward (' + distanceCm + ' cm clear)' : 'driving forward';
+      statusText = sonarOk === false ? 'driving forward (distance sensor unavailable)'
+        : distanceCm != null ? 'driving forward (' + distanceCm + ' cm clear)' : 'driving forward';
     } else {
       statusText = 'starting…';
     }
@@ -283,7 +293,7 @@ function _pollAutoDriveStatus() {
   fetch('/api/motors/auto/status')
     .then(function(r) { return r.json(); })
     .then(function(d) {
-      _renderAutoDriveState(d.running, d.action, d.distance_cm);
+      _renderAutoDriveState(d.running, d.action, d.distance_cm, d.sonar_ok);
       if (!d.running && _autoDrivePoll) {
         clearInterval(_autoDrivePoll);
         _autoDrivePoll = null;
@@ -428,7 +438,7 @@ pollTelemetry();
 fetch('/api/motors/auto/status')
   .then(function(r) { return r.json(); })
   .then(function(d) {
-    _renderAutoDriveState(d.running, d.action, d.distance_cm);
+    _renderAutoDriveState(d.running, d.action, d.distance_cm, d.sonar_ok);
     if (d.running) _autoDrivePoll = setInterval(_pollAutoDriveStatus, 500);
   })
   .catch(function() {});

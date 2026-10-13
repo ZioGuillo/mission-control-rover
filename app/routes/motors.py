@@ -31,7 +31,7 @@ _ML_CENTER_BAND = (0.25, 0.75)
 
 _auto_lock = threading.Lock()
 _auto_running = False
-_auto_status: dict = {"action": None, "distance_cm": None}
+_auto_status: dict = {"action": None, "distance_cm": None, "sonar_ok": None}
 _auto_thread: threading.Thread | None = None
 
 
@@ -41,6 +41,16 @@ class MotorRequest(BaseModel):
 
 def _sonar_blocked(dist: float) -> bool:
     return 0 < dist < settings.obstacle_threshold_cm
+
+
+def _sonar_ok(dist: float) -> bool:
+    """get_distance() returns inf when the distance sensor is unavailable
+    (no hardware, unplugged, or no echo) — the robot still drives, but
+    without sonar obstacle detection."""
+    return dist != float("inf")
+
+
+SONAR_UNAVAILABLE_MSG = "Distance sensor unavailable — driving without obstacle detection"
 
 
 def _ml_obstacle_direction(detections: list[dict]) -> str | None:
@@ -88,6 +98,8 @@ def _auto_loop() -> None:
                 if not _auto_running:
                     break
             dist = driver.get_distance()
+            with _auto_lock:
+                _auto_status["sonar_ok"] = _sonar_ok(dist)
             sonar_triggered = _sonar_blocked(dist)
             ml_direction = _ml_obstacle_direction(ml_driver.get_detections())
             if sonar_triggered or ml_direction is not None:
@@ -118,6 +130,7 @@ def _auto_loop() -> None:
             _auto_running = False
             _auto_status["action"] = None
             _auto_status["distance_cm"] = None
+            _auto_status["sonar_ok"] = None
 
 
 def _stop_auto_drive() -> None:
@@ -149,6 +162,7 @@ async def auto_drive_start():
         _auto_running = True
         _auto_status["action"] = None
         _auto_status["distance_cm"] = None
+        _auto_status["sonar_ok"] = None
         _auto_thread = threading.Thread(target=_auto_loop, daemon=True)
         _auto_thread.start()
     return {"ok": True, "running": True}
@@ -183,9 +197,11 @@ async def motor_action(action: str, body: MotorRequest = None):
         )
     speed = body.speed if body.speed is not None else settings.motor_speed_default
     t0 = time.monotonic()
+    sonar_ok = None
     try:
         if action == "forward":
             dist = driver.get_distance()
+            sonar_ok = _sonar_ok(dist)
             if 0 < dist < settings.obstacle_threshold_cm:
                 driver.set_motors(0, 0, 0, 0)
                 driver.set_motors(speed / 2, _M1_FWD, speed / 2, _M2_REV)  # turn right to evade
@@ -216,4 +232,9 @@ async def motor_action(action: str, body: MotorRequest = None):
         raise HTTPException(status_code=503, detail={"ok": False, "message": str(e)})
     telemetry.record_command((time.monotonic() - t0) * 1000, action, speed)
     m.MOTOR_CMDS_TOTAL.labels(action=action).inc()
-    return {"ok": True, "action": action}
+    resp = {"ok": True, "action": action}
+    if sonar_ok is not None:
+        resp["sonar_ok"] = sonar_ok
+        if not sonar_ok:
+            resp["message"] = SONAR_UNAVAILABLE_MSG
+    return resp

@@ -1,3 +1,4 @@
+import itertools
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -98,3 +99,44 @@ def test_set_motors_stops_before_reversing_direction():
     driver.available = original_available
     driver._old_left_dir = original_left_dir
     driver._old_right_dir = original_right_dir
+
+
+def _real_sonar(monkeypatch, echo_levels, clock=None):
+    """Point get_distance() at a fake GPIO whose echo pin reads `echo_levels`
+    in order, as if real (non-simulated) hardware were attached."""
+    gpio = MagicMock()
+    gpio.input.side_effect = echo_levels
+    monkeypatch.setattr(driver, "GPIO", gpio)
+    monkeypatch.setattr(driver, "available", True)
+    monkeypatch.setattr(driver, "simulated", False)
+    monkeypatch.setattr(driver, "_ECHO_TIMEOUT_LOOPS", 5)
+    monkeypatch.setattr(driver.time, "sleep", lambda _s: None)
+    if clock is not None:
+        monkeypatch.setattr(driver.time, "time", MagicMock(side_effect=clock))
+
+
+def test_get_distance_returns_inf_when_echo_never_starts(monkeypatch):
+    """Sensor unplugged / echo pin floating low: the echo pulse never
+    arrives. Must read as 'unavailable' (inf), not as a ~0 cm obstacle —
+    a ~0 cm reading makes the robot refuse to drive forward."""
+    _real_sonar(monkeypatch, itertools.repeat(0))
+    assert driver.get_distance() == float("inf")
+
+
+def test_get_distance_returns_inf_when_echo_never_ends(monkeypatch):
+    """Echo pin stuck high: the pulse never finishes — also unavailable."""
+    _real_sonar(monkeypatch, itertools.repeat(1))
+    assert driver.get_distance() == float("inf")
+
+
+def test_get_distance_measures_a_normal_echo(monkeypatch):
+    # echo goes high after one poll, back low after one more; 0.58 ms pulse = 10 cm
+    _real_sonar(monkeypatch, [0, 1, 1, 0], clock=[100.0, 100.00058])
+    assert driver.get_distance() == pytest.approx(10.0)
+
+
+def test_get_distance_simulated_is_always_finite(monkeypatch):
+    monkeypatch.setattr(driver, "available", True)
+    monkeypatch.setattr(driver, "simulated", True)
+    d = driver.get_distance()
+    assert 15.0 <= d <= 150.0
