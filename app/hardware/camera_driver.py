@@ -69,7 +69,14 @@ def _open_opencv(allow_default_index: bool = False):
 try:
     from picamera2 import Picamera2
 
-    _cam = Picamera2()
+    _tuning = None
+    if settings.camera_noir:
+        _model = str(Picamera2.global_camera_info()[0].get("Model", ""))
+        try:
+            _tuning = Picamera2.load_tuning_file(f"{_model}_noir.json")
+        except Exception:
+            _log.warning("CAMERA_NOIR set but no %s_noir.json tuning file", _model)
+    _cam = Picamera2(tuning=_tuning)
     # Only USB (UVC) cameras deliver MJPEG. A CSI camera (Pi Camera, OV5647,
     # IMX219…) comes out of the ISP as raw pixels: libcamera silently swaps
     # MJPEG for YUYV, so the JPEG end-marker search never finds a frame.
@@ -77,6 +84,7 @@ try:
     _picam_jpeg = "usb" in str(Picamera2.global_camera_info()[0].get("Id", "")).lower()
     _cam.configure(_cam.create_video_configuration(
         main={"size": (640, 480), "format": "MJPEG" if _picam_jpeg else "RGB888"},
+        controls={"FrameRate": settings.camera_fps},
     ))
     available = True
     _backend = "picamera2"

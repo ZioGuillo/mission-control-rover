@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     port: int = 8000
     base_url: str = ""
     camera_stream_url: str = ""
+    # Camera without an IR-cut filter (NoIR / night-vision, e.g. Kuman SC15):
+    # use the sensor's "_noir" colour tuning so daylight isn't pink.
+    camera_noir: bool = False
+    # CSI camera frame rate. Each frame is JPEG-encoded on the CPU, so keep it
+    # low on a Pi Zero (10 fps ≈ a third of the CPU); raise it on faster boards.
+    camera_fps: Annotated[int, Field(ge=1, le=60)] = 10
     motor_speed_default: Annotated[float, Field(ge=0.0, le=1.0)] = 0.75
     pan_servo_pin: GpioPin = 12
     tilt_servo_pin: GpioPin = 13
