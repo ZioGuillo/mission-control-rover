@@ -60,6 +60,13 @@ def _open_opencv(allow_default_index: bool = False):
         cap.release()
     return None
 
+def _picam_config(fmt: str):
+    return _cam.create_video_configuration(
+        main={"size": (640, 480), "format": fmt},
+        controls={"FrameRate": settings.camera_fps},
+    )
+
+
 # Real camera hardware is tried first regardless of SIMULATE — SIMULATE
 # fakes drivers that would otherwise need real motor/sonar/servo hardware,
 # but a camera plugged in over USB/CSI is just as usable in a SIMULATE
@@ -91,10 +98,8 @@ try:
     # MJPEG for YUYV, so the JPEG end-marker search never finds a frame.
     # For those, ask for RGB and JPEG-encode each frame ourselves.
     _picam_jpeg = "usb" in str(Picamera2.global_camera_info()[0].get("Id", "")).lower()
-    _cam.configure(_cam.create_video_configuration(
-        main={"size": (640, 480), "format": "MJPEG" if _picam_jpeg else "RGB888"},
-        controls={"FrameRate": settings.camera_fps},
-    ))
+    # YUV420 feeds the Pi's hardware JPEG encoder (see _picamera2_loop).
+    _cam.configure(_picam_config("MJPEG" if _picam_jpeg else "YUV420"))
     available = True
     _backend = "picamera2"
 except Exception:
@@ -123,12 +128,47 @@ if _backend in ("none", "opencv") and not available and settings.simulate:
     _backend = "simulated"
 
 
+class _FrameSink(io.BufferedIOBase):
+    """Receives each JPEG from picamera2's encoder and publishes it."""
+
+    def write(self, buf) -> int:
+        global _latest_frame, _frame_counter
+        with _lock:
+            _latest_frame = bytes(buf)
+            _frame_counter += 1
+        return len(buf)
+
+
+def _picamera2_hw_jpeg() -> bool:
+    """CSI camera: JPEG-encode on the GPU's hardware encoder (Pi Zero–4).
+    Encoding in Python instead pins a Pi Zero's CPU. Returns False when
+    there's no hardware encoder (Pi 5) so the caller can encode in software."""
+    from picamera2.encoders import MJPEGEncoder
+    from picamera2.outputs import FileOutput
+
+    try:
+        _cam.start_recording(MJPEGEncoder(), FileOutput(_FrameSink()))
+    except Exception as exc:
+        _log.warning("no hardware JPEG encoder (%s), encoding in software", exc)
+        return False
+    try:
+        while _running:
+            time.sleep(0.2)
+    finally:
+        _cam.stop_recording()
+    return True
+
+
 def _picamera2_loop() -> None:
     global _latest_frame, _frame_counter, _running
     try:
-        _cam.start()
         if not _picam_jpeg:
+            if _picamera2_hw_jpeg():
+                return
             import simplejpeg  # ships with picamera2
+
+            _cam.configure(_picam_config("RGB888"))
+        _cam.start()
 
         while _running:
             request = _cam.capture_request()
