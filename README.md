@@ -103,10 +103,10 @@ USB     → USB webcam         (if using)
 | ----- | ------------ | --------------- |
 | Raspberry Pi 3B+ / 4 | `RPi.GPIO` | `picamera2` (CSI) |
 | Raspberry Pi 5 | `rpi-lgpio` (drop-in `RPi.GPIO` replacement for the RP1 chip) | `picamera2` (CSI) |
-| Jetson Nano / other Jetson | `Jetson.GPIO` | OpenCV (`opencv-python-headless`) — USB webcam or V4L2 |
+| Jetson Nano / other Jetson | `Jetson.GPIO` | Argus (`nvarguscamerasrc` + hardware JPEG, CSI); OpenCV for a USB webcam |
 | Anything else (USB webcam, no GPIO) | — (drives disable themselves) | OpenCV |
 
-`scripts/install.sh` reads `/proc/device-tree/model` and installs the matching GPIO package automatically; `app/hardware/gpio_compat.py` then picks up whichever backend is importable. `app/hardware/camera_driver.py` tries `picamera2` first and falls back to OpenCV.
+`scripts/install.sh` reads `/proc/device-tree/model` and installs the matching GPIO package automatically; `app/hardware/gpio_compat.py` then picks up whichever backend is importable. `app/hardware/camera_driver.py` picks the camera backend per board (`BOARD_CAMERA`): `picamera2` on a Pi, Argus on a Jetson, OpenCV as the USB-webcam fallback on both. Set `CAMERA_BACKEND` to force one.
 
 **Moving the RRB3 board to a Jetson Nano:** the motor driver in `app/hardware/rrb3_driver.py` talks to the RRB3 over the same BCM pin numbers it uses on a Raspberry Pi, via whichever GPIO backend was detected — no code changes needed. What I can't verify for you is the physical wiring: Jetson Nano's 40-pin header matches a Raspberry Pi's layout closely enough for `Jetson.GPIO`'s BCM-compatible mode to work for most digital I/O, but **check your specific pins against a Jetson pinout diagram with a multimeter before powering the board** — a wrong assumption here is the kind of mistake that damages hardware, not just software.
 
@@ -464,6 +464,8 @@ All settings live in `~/robocontrol/.env`:
 | `PORT` | `8000` | HTTP port |
 | `BASE_URL` | *(empty)* | Public URL when behind Cloudflare or a proxy — required for GitHub OAuth |
 | `CAMERA_STREAM_URL` | *(empty)* | Fallback MJPEG URL if no local camera is detected |
+| `CAMERA_BACKEND` | `auto` | `auto` = per board (Pi → `picamera2`, Jetson → `argus`, then `opencv`); or force `picamera2` / `argus` / `opencv` |
+| `CAMERA_FPS` | *(board default)* | 10 on a Pi (CPU JPEG encoding), 30 on a Jetson (hardware encoder) |
 | `MOTOR_SPEED_DEFAULT` | `0.75` | Default motor power (0.0–1.0) |
 | `OBSTACLE_THRESHOLD_CM` | `20` | Sonar distance (cm) that triggers auto-stop |
 | `PAN_SERVO_PIN` | `12` | GPIO pin for pan servo |

@@ -2,6 +2,9 @@ import glob
 import io
 import logging
 import math
+import os
+import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -9,6 +12,7 @@ import time
 import numpy as np
 
 from app.config import settings
+from app.hardware import board_info
 
 _log = logging.getLogger(__name__)
 
@@ -21,6 +25,36 @@ _running = False
 _backend: str = "none"
 _cv_cam = None
 _picam_jpeg = False  # picamera2 backend: camera delivers ready-made JPEG (USB/UVC)
+_argus_proc: subprocess.Popen | None = None
+_argus_sensor: int | None = None
+
+# ── Per-board camera profile ──────────────────────────────────────────
+# Which capture backends to try, in order, and the frame rate when
+# CAMERA_FPS isn't set. CAMERA_BACKEND in .env overrides the order.
+#   Raspberry Pi → picamera2 (libcamera + the Pi's ISP), then OpenCV for a
+#                  USB webcam. ~10 fps: JPEG encoding costs a Pi Zero's CPU.
+#   Jetson       → Argus (nvarguscamerasrc: the Jetson's ISP + hardware JPEG
+#                  encoder), then OpenCV for a USB webcam. Plain V4L2 on a
+#                  Jetson CSI camera returns raw Bayer (a solid green image),
+#                  and holding it open while Argus starts can hang the board.
+BOARD_CAMERA = {
+    "raspberry_pi": {"backends": ("picamera2", "opencv"), "fps": 10},
+    "jetson": {"backends": ("argus", "opencv"), "fps": 30},
+    "unknown": {"backends": ("picamera2", "opencv"), "fps": 10},
+}
+
+
+def backend_order(requested: str, board_type: str) -> tuple[str, ...]:
+    """Backends to try for CAMERA_BACKEND=requested on this board."""
+    if requested != "auto":
+        return (requested,)
+    return BOARD_CAMERA.get(board_type, BOARD_CAMERA["unknown"])["backends"]
+
+
+def camera_fps(board_type: str = board_info.board_type) -> int:
+    if settings.camera_fps:
+        return settings.camera_fps
+    return BOARD_CAMERA.get(board_type, BOARD_CAMERA["unknown"])["fps"]
 
 # USB camera hot-plug (OpenCV backend): this many failed reads in a row means
 # the camera is gone; while it's gone, look for one again this often.
@@ -65,8 +99,69 @@ def _picam_config(fmt: str):
         main={"size": (640, 480), "format": fmt},
         # Strongest ISP denoise: done in hardware, so it's free on the CPU,
         # and less sensor noise (worst at night) means much smaller JPEGs.
-        controls={"FrameRate": settings.camera_fps, "NoiseReductionMode": 2},
+        controls={"FrameRate": camera_fps(), "NoiseReductionMode": 2},
     )
+
+
+def _argus_sensor_id() -> int | None:
+    """Argus sensor-id of the first Jetson CSI camera, or None.
+
+    Jetson CSI cameras show up as /dev/videoN named "vi-output, <sensor>";
+    Argus numbers the ones that probed OK from 0, whichever CAM port they're
+    on. Needs gst-launch-1.0 (JetPack)."""
+    if shutil.which("gst-launch-1.0") is None:
+        return None
+    for path in glob.glob("/sys/class/video4linux/video*/name"):
+        try:
+            with open(path) as f:
+                if f.read().startswith("vi-output"):
+                    return 0
+        except OSError:
+            continue
+    return None
+
+
+def _argus_cmd(sensor_id: int, fps: int, out_fd: int) -> list[str]:
+    """1640x1232 is the IMX219's full-view 4:3 mode; the ISP scales it down
+    and nvjpegenc encodes on the GPU, so the CPU never touches a pixel.
+    JPEGs go to out_fd: nvarguscamerasrc prints its log lines to stdout."""
+    return [
+        "gst-launch-1.0", "-q",
+        "nvarguscamerasrc", f"sensor-id={sensor_id}",
+        "!", f"video/x-raw(memory:NVMM),width=1640,height=1232,framerate={fps}/1",
+        "!", "nvvidconv",
+        "!", "video/x-raw(memory:NVMM),width=640,height=480",
+        "!", "nvjpegenc", "quality=85",
+        "!", "fdsink", f"fd={out_fd}",
+    ]
+
+
+def split_jpegs(buf: bytes) -> tuple[list[bytes], bytes]:
+    """Complete JPEGs in buf, plus the unfinished remainder to keep.
+    Inside a JPEG's compressed data every 0xFF is followed by 0x00, and
+    nvjpegenc writes no embedded thumbnail, so the first FFD9 after an FFD8
+    is that image's end."""
+    frames = []
+    while True:
+        start = buf.find(b"\xff\xd8")
+        if start < 0:
+            return frames, b""
+        end = buf.find(b"\xff\xd9", start + 2)
+        if end < 0:
+            return frames, buf[start:]
+        frames.append(buf[start:end + 2])
+        buf = buf[end + 2:]
+
+
+def _die_with_parent() -> None:
+    """Child: get SIGTERM if the app dies, so Argus never keeps the camera."""
+    try:
+        import ctypes
+        import signal
+
+        ctypes.CDLL("libc.so.6").prctl(1, signal.SIGTERM)  # PR_SET_PDEATHSIG
+    except Exception:
+        pass
 
 
 # Real camera hardware is tried first regardless of SIMULATE — SIMULATE
@@ -75,44 +170,53 @@ def _picam_config(fmt: str):
 # session (e.g. hardwareless mission testing with a real camera attached),
 # so it's never ignored outright. SIMULATE only controls the synthetic
 # fallback when no real camera is found.
-try:
-    from picamera2 import Picamera2
+_order = backend_order(settings.camera_backend, board_info.board_type)
 
-    _tuning = None
-    if settings.camera_noir:
-        # The tuning must be chosen before libcamera starts, so the sensor
-        # name comes from the kernel (e.g. "ov5647 10-0036"), not from
-        # Picamera2.global_camera_info(), which would start it too early.
-        _model = ""
-        for _p in glob.glob("/sys/class/video4linux/v4l-subdev*/name"):
-            with open(_p) as _f:
-                _name = _f.read().split()
-            if _name and _name[0].startswith(("ov", "imx")):
-                _model = _name[0]
-                break
-        try:
-            _tuning = Picamera2.load_tuning_file(f"{_model}_noir.json")
-        except Exception:
-            _log.warning("CAMERA_NOIR set but no %s_noir.json tuning file", _model)
-    _cam = Picamera2(tuning=_tuning)
-    # Only USB (UVC) cameras deliver MJPEG. A CSI camera (Pi Camera, OV5647,
-    # IMX219…) comes out of the ISP as raw pixels: libcamera silently swaps
-    # MJPEG for YUYV, so the JPEG end-marker search never finds a frame.
-    # For those, ask for RGB and JPEG-encode each frame ourselves.
-    _picam_jpeg = "usb" in str(Picamera2.global_camera_info()[0].get("Id", "")).lower()
-    # YUV420 feeds the Pi's hardware JPEG encoder (see _picamera2_loop).
-    _cam.configure(_picam_config("MJPEG" if _picam_jpeg else "YUV420"))
-    available = True
-    _backend = "picamera2"
-except Exception:
-    pass
+if "argus" in _order:
+    _argus_sensor = _argus_sensor_id()
+    if _argus_sensor is not None:
+        available = True
+        _backend = "argus"
 
-# Fallback for boards without picamera2/libcamera (e.g. Jetson Nano, or a
-# Pi with a USB webcam instead of a CSI camera): any V4L2-visible camera
-# via OpenCV. Requires opencv-python-headless — see requirements.txt.
-# The backend is chosen even with no camera plugged in yet: the capture loop
-# keeps looking, so a USB camera can be plugged in (or re-plugged) at any time.
-if not available:
+if not available and "picamera2" in _order:
+    try:
+        from picamera2 import Picamera2
+
+        _tuning = None
+        if settings.camera_noir:
+            # The tuning must be chosen before libcamera starts, so the sensor
+            # name comes from the kernel (e.g. "ov5647 10-0036"), not from
+            # Picamera2.global_camera_info(), which would start it too early.
+            _model = ""
+            for _p in glob.glob("/sys/class/video4linux/v4l-subdev*/name"):
+                with open(_p) as _f:
+                    _name = _f.read().split()
+                if _name and _name[0].startswith(("ov", "imx")):
+                    _model = _name[0]
+                    break
+            try:
+                _tuning = Picamera2.load_tuning_file(f"{_model}_noir.json")
+            except Exception:
+                _log.warning("CAMERA_NOIR set but no %s_noir.json tuning file", _model)
+        _cam = Picamera2(tuning=_tuning)
+        # Only USB (UVC) cameras deliver MJPEG. A CSI camera (Pi Camera, OV5647,
+        # IMX219…) comes out of the ISP as raw pixels: libcamera silently swaps
+        # MJPEG for YUYV, so the JPEG end-marker search never finds a frame.
+        # For those, ask for RGB and JPEG-encode each frame ourselves.
+        _picam_jpeg = "usb" in str(Picamera2.global_camera_info()[0].get("Id", "")).lower()
+        # YUV420 feeds the Pi's hardware JPEG encoder (see _picamera2_loop).
+        _cam.configure(_picam_config("MJPEG" if _picam_jpeg else "YUV420"))
+        available = True
+        _backend = "picamera2"
+    except Exception:
+        pass
+
+# Fallback for a USB webcam (Pi or Jetson with no CSI camera): any
+# V4L2-visible camera via OpenCV. Requires opencv-python-headless — see
+# requirements.txt. The backend is chosen even with no camera plugged in
+# yet: the capture loop keeps looking, so a USB camera can be plugged in
+# (or re-plugged) at any time.
+if not available and "opencv" in _order:
     try:
         import cv2  # noqa: F401 — only checking that OpenCV is importable
 
@@ -199,6 +303,67 @@ def _picamera2_loop() -> None:
             _cam.stop()
         except Exception:
             pass
+
+
+def _argus_loop() -> None:
+    """Capture from a Jetson CSI camera through Argus. If gst-launch-1.0
+    exits (nvargus-daemon restarted, cable knocked loose) the camera counts
+    as gone and the pipeline is restarted every _REDETECT_SECONDS."""
+    global _latest_frame, _frame_counter, _argus_proc
+
+    while _running:
+        r, w = os.pipe()
+        try:
+            proc = subprocess.Popen(
+                _argus_cmd(_argus_sensor, camera_fps(), w),
+                pass_fds=(w,),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                preexec_fn=_die_with_parent,
+            )
+        except OSError as exc:
+            os.close(r)
+            os.close(w)
+            _log.error("can't start Argus camera pipeline: %s", exc)
+            _set_available(False)
+            time.sleep(_REDETECT_SECONDS)
+            continue
+        os.close(w)
+        _argus_proc = proc
+        buf = b""
+        got_frame = False
+        with os.fdopen(r, "rb", buffering=0) as pipe:
+            while _running:
+                chunk = pipe.read(65536)
+                if not chunk:
+                    break
+                frames, buf = split_jpegs(buf + chunk)
+                if frames:
+                    if not got_frame:
+                        got_frame = True
+                        _log.info("camera connected (Argus sensor %d)", _argus_sensor)
+                        _set_available(True)
+                    with _lock:
+                        _latest_frame = frames[-1]
+                        _frame_counter += len(frames)
+        if proc.poll() is None:
+            proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+        _argus_proc = None
+        if not _running:
+            break
+        err = proc.stderr.read().decode(errors="replace").strip() if proc.stderr else ""
+        _log.warning("Argus camera pipeline exited (%s) — restarting: %s",
+                     proc.returncode, err[-300:])
+        with _lock:
+            _latest_frame = None
+        _set_available(False)
+        time.sleep(_REDETECT_SECONDS)
 
 
 def _set_available(value: bool) -> None:
@@ -295,7 +460,9 @@ def _simulated_loop() -> None:
 
 
 def _capture_loop() -> None:
-    if _backend == "picamera2":
+    if _backend == "argus":
+        _argus_loop()
+    elif _backend == "picamera2":
         _picamera2_loop()
     elif _backend == "opencv":
         _opencv_loop()
@@ -318,6 +485,9 @@ def start() -> None:
 def stop() -> None:
     global _running
     _running = False
+    proc = _argus_proc
+    if proc is not None and proc.poll() is None:
+        proc.terminate()  # unblocks _argus_loop's read and frees the camera
 
 
 def get_frame() -> bytes | None:

@@ -1,6 +1,7 @@
 """Hot-plug behaviour of the OpenCV (USB/V4L2) camera backend: unplugging the
 camera must mark it unavailable and drop the stale frame; plugging it back
 in must be picked up without restarting the app."""
+import sys
 import threading
 import time
 
@@ -105,3 +106,136 @@ def test_camera_plugged_in_after_boot_is_picked_up(opencv_backend):
 def test_video_device_indexes_come_from_dev_video(monkeypatch):
     monkeypatch.setattr(cam.glob, "glob", lambda _p: ["/dev/video2", "/dev/video0", "/dev/video10"])
     assert cam._video_device_indexes() == [0, 2, 10]
+
+
+# ── Per-board backend choice ──────────────────────────────────────────
+
+def test_auto_backend_follows_the_board():
+    assert cam.backend_order("auto", "jetson") == ("argus", "opencv")
+    assert cam.backend_order("auto", "raspberry_pi") == ("picamera2", "opencv")
+    assert cam.backend_order("auto", "unknown") == ("picamera2", "opencv")
+
+
+def test_camera_backend_setting_overrides_the_board():
+    assert cam.backend_order("opencv", "jetson") == ("opencv",)
+    assert cam.backend_order("argus", "raspberry_pi") == ("argus",)
+
+
+def test_fps_defaults_per_board_unless_set(monkeypatch):
+    monkeypatch.setattr(cam.settings, "camera_fps", None)
+    assert cam.camera_fps("jetson") == 30
+    assert cam.camera_fps("raspberry_pi") == 10
+    monkeypatch.setattr(cam.settings, "camera_fps", 15)
+    assert cam.camera_fps("jetson") == 15
+
+
+def test_blank_camera_fps_in_env_means_board_default(monkeypatch):
+    from app.config import Settings
+
+    monkeypatch.setenv("CAMERA_FPS", "")
+    assert Settings(_env_file=None).camera_fps is None
+
+
+# ── Argus (Jetson CSI) backend ────────────────────────────────────────
+
+JPEG_A = b"\xff\xd8\xff\xdbAAAA\xff\x00\xff\xd9"
+JPEG_B = b"\xff\xd8\xff\xdbBBBB\xff\xd9"
+
+
+def test_split_jpegs_keeps_partial_frame_for_next_chunk():
+    frames, rest = cam.split_jpegs(b"GST_ARGUS: Running\n" + JPEG_A + JPEG_B[:6])
+    assert frames == [JPEG_A]
+    assert rest == JPEG_B[:6]
+    frames, rest = cam.split_jpegs(rest + JPEG_B[6:])
+    assert frames == [JPEG_B]
+    assert rest == b""
+
+
+def test_argus_sensor_found_only_for_jetson_csi_camera(monkeypatch, tmp_path):
+    (tmp_path / "video0").mkdir()
+    name = tmp_path / "video0" / "name"
+    monkeypatch.setattr(cam.shutil, "which", lambda _c: "/usr/bin/gst-launch-1.0")
+    monkeypatch.setattr(cam.glob, "glob", lambda _p: [str(name)])
+
+    name.write_text("vi-output, imx219 8-0010\n")
+    assert cam._argus_sensor_id() == 0
+    name.write_text("USB 2.0 Camera\n")  # a webcam is OpenCV's job
+    assert cam._argus_sensor_id() is None
+
+
+def test_argus_needs_gstreamer(monkeypatch):
+    monkeypatch.setattr(cam.shutil, "which", lambda _c: None)
+    assert cam._argus_sensor_id() is None
+
+
+def test_argus_cmd_writes_jpegs_to_the_given_fd():
+    cmd = cam._argus_cmd(0, 30, 7)
+    assert cmd[:4] == ["gst-launch-1.0", "-q", "nvarguscamerasrc", "sensor-id=0"]
+    assert "framerate=30/1" in " ".join(cmd)
+    assert cmd[-1] == "fd=7"
+
+
+@pytest.fixture
+def argus_backend(monkeypatch):
+    """Run the Argus loop against a fake gst-launch: a Python child that
+    writes log noise to stdout and JPEGs to the pipe, like the real one."""
+    monkeypatch.setattr(cam, "_backend", "argus")
+    monkeypatch.setattr(cam, "_argus_sensor", 0)
+    monkeypatch.setattr(cam, "available", True)
+    monkeypatch.setattr(cam, "_latest_frame", None)
+    monkeypatch.setattr(cam, "_REDETECT_SECONDS", 0.01)
+    runs = []
+
+    def script(child_code):
+        def fake_cmd(_sensor, _fps, fd):
+            runs.append(fd)
+            return [sys.executable, "-c", child_code.replace("FD", str(fd))]
+
+        monkeypatch.setattr(cam, "_argus_cmd", fake_cmd)
+
+    yield script, runs
+    cam.stop()
+    time.sleep(0.1)
+
+
+def test_argus_frames_are_published(argus_backend):
+    script, _ = argus_backend
+    script(
+        "import os, time\n"
+        "print('GST_ARGUS: Running with following settings')\n"
+        f"os.write(FD, {JPEG_A!r} + {JPEG_B!r})\n"
+        "time.sleep(30)\n"
+    )
+    before = cam._frame_counter
+    cam.start()
+    assert _wait_for(lambda: cam._frame_counter >= before + 2)
+    assert cam.get_frame() == JPEG_B
+    assert cam.available is True
+
+
+def test_argus_pipeline_exit_drops_frame_and_restarts(argus_backend, monkeypatch):
+    script, runs = argus_backend
+    script(f"import os\nos.write(FD, {JPEG_A!r})\n")  # one frame, then exits
+    states = []
+
+    def record(value):
+        # the frame must already be gone when the camera is marked unavailable
+        states.append((value, cam._latest_frame))
+
+    monkeypatch.setattr(cam, "_set_available", record)
+    cam.start()
+    assert _wait_for(lambda: len(runs) >= 2), "pipeline not restarted after exiting"
+    assert _wait_for(lambda: len(states) >= 3)
+    # connected → pipeline exited (frame dropped) → connected again
+    assert [v for v, _ in states[:3]] == [True, False, True]
+    assert states[1] == (False, None), "stale frame kept after the pipeline died"
+
+
+def test_stop_terminates_argus_so_the_camera_is_freed(argus_backend):
+    script, _ = argus_backend
+    script(f"import os, time\nos.write(FD, {JPEG_A!r})\ntime.sleep(30)\n")
+    cam.start()
+    assert _wait_for(lambda: cam._argus_proc is not None and cam.get_frame() == JPEG_A)
+    proc = cam._argus_proc
+    cam.stop()
+    assert _wait_for(lambda: proc.poll() is not None), "gst-launch kept running after stop()"

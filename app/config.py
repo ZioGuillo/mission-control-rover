@@ -1,6 +1,6 @@
 import secrets
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -32,9 +32,14 @@ class Settings(BaseSettings):
     # Camera without an IR-cut filter (NoIR / night-vision, e.g. Kuman SC15):
     # use the sensor's "_noir" colour tuning so daylight isn't pink.
     camera_noir: bool = False
-    # CSI camera frame rate. Each frame is JPEG-encoded on the CPU, so keep it
-    # low on a Pi Zero (10 fps ≈ a third of the CPU); raise it on faster boards.
-    camera_fps: Annotated[int, Field(ge=1, le=60)] = 10
+    # Which camera backend to use. "auto" picks per board — see BOARD_CAMERA
+    # in app/hardware/camera_driver.py (Pi → picamera2, Jetson → argus, both
+    # fall back to opencv for a USB webcam).
+    camera_backend: Literal["auto", "picamera2", "argus", "opencv"] = "auto"
+    # Camera frame rate. Unset = the board's default: 10 on a Pi (each frame
+    # is JPEG-encoded there; 10 fps ≈ a third of a Pi Zero's CPU), 30 on a
+    # Jetson (hardware JPEG encoder, no CPU cost).
+    camera_fps: Annotated[int, Field(ge=1, le=60)] | None = None
     motor_speed_default: Annotated[float, Field(ge=0.0, le=1.0)] = 0.75
     pan_servo_pin: GpioPin = 12
     tilt_servo_pin: GpioPin = 13
@@ -57,6 +62,11 @@ class Settings(BaseSettings):
     # .env is shared with the systemd services (WiFi portal, Cloudflare
     # provisioning, Jetson fan): ignore their keys instead of refusing to start.
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    @field_validator("camera_fps", mode="before")
+    @classmethod
+    def blank_fps_means_board_default(cls, v):
+        return None if v == "" else v
 
     @field_validator("camera_stream_url")
     @classmethod
