@@ -9,7 +9,10 @@ User=pi
 WorkingDirectory=/home/pi/robocontrol
 EnvironmentFile=/home/pi/robocontrol/.env
 ExecStartPre=/bin/bash -c 'fuser -k 8000/tcp 2>/dev/null || true'
-ExecStart=/home/pi/robocontrol/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+# --timeout-graceful-shutdown: an open camera stream (MJPEG) never ends on
+# its own, so without a limit `systemctl restart` waits for every browser
+# tab showing the camera — 90 s until systemd's own timeout kills it.
+ExecStart=/home/pi/robocontrol/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --timeout-graceful-shutdown 3
 Restart=on-failure
 RestartSec=5
 # Cap the app's RAM so a runaway ML model gets the app OOM-killed and
