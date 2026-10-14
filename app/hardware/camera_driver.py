@@ -71,7 +71,16 @@ try:
 
     _tuning = None
     if settings.camera_noir:
-        _model = str(Picamera2.global_camera_info()[0].get("Model", ""))
+        # The tuning must be chosen before libcamera starts, so the sensor
+        # name comes from the kernel (e.g. "ov5647 10-0036"), not from
+        # Picamera2.global_camera_info(), which would start it too early.
+        _model = ""
+        for _p in glob.glob("/sys/class/video4linux/v4l-subdev*/name"):
+            with open(_p) as _f:
+                _name = _f.read().split()
+            if _name and _name[0].startswith(("ov", "imx")):
+                _model = _name[0]
+                break
         try:
             _tuning = Picamera2.load_tuning_file(f"{_model}_noir.json")
         except Exception:

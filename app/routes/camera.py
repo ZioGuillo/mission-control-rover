@@ -71,11 +71,11 @@ async def mjpeg_stream():
         loop = asyncio.get_running_loop()
         last_counter = 0
         while True:
-            frame, last_counter = await loop.run_in_executor(
-                None, camera_driver.get_frame_if_new, last_counter
-            )
+            # Just a lock + compare: cheap enough to call inline. Going through
+            # the thread pool 100×/s per viewer pinned a Pi Zero's CPU.
+            frame, last_counter = camera_driver.get_frame_if_new(last_counter)
             if frame is None:
-                await asyncio.sleep(0.01)
+                await asyncio.sleep(0.03)
                 continue
             if ml_driver.available and ml_driver.enabled:
                 detections = ml_driver.get_detections()
