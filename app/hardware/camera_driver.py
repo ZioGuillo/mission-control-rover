@@ -146,8 +146,14 @@ def _picamera2_hw_jpeg() -> bool:
     from picamera2.encoders import MJPEGEncoder
     from picamera2.outputs import FileOutput
 
+    # picamera2's default bitrate assumes 30 fps; size it for the real frame
+    # rate (its "medium" quality: 30 Mbps at 1080p30, scaled by pixels × fps).
+    # In the dark, sensor noise barely compresses — without this cap frames
+    # triple in size and pushing them over WiFi pins a Pi Zero's CPU.
+    w, h = _cam.camera_config["main"]["size"]
+    bitrate = int(30_000_000 * w * h * settings.camera_fps / (1920 * 1080 * 30))
     try:
-        _cam.start_recording(MJPEGEncoder(), FileOutput(_FrameSink()))
+        _cam.start_recording(MJPEGEncoder(bitrate=bitrate), FileOutput(_FrameSink()))
     except Exception as exc:
         _log.warning("no hardware JPEG encoder (%s), encoding in software", exc)
         return False

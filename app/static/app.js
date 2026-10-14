@@ -4,6 +4,7 @@ function showTab(name, btn) {
   document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
   if (btn) btn.classList.add('active');
+  syncStreams();
 }
 
 // ── Notifications ──────────────────────────────────────────────
@@ -57,7 +58,7 @@ function onStreamError(id) {
   if (_streamRetry[id]) return;
   _streamRetry[id] = setTimeout(function() {
     _streamRetry[id] = null;
-    _replaceStreamImg(id);
+    if (_streamVisible(id)) _replaceStreamImg(id);
   }, 3000);
 }
 
@@ -68,14 +69,51 @@ function onStreamLoad(id) {
 }
 
 function reconnectStreams() {
-  ['cam-stream', 'pip-cam'].forEach(function(id) {
+  STREAM_IDS.forEach(function(id) {
     clearTimeout(_streamRetry[id]);
     _streamRetry[id] = null;
+    if (!_streamVisible(id)) return;
     var corner = document.getElementById(id + '-corner');
     if (corner) corner.classList.add('spinning');
     _replaceStreamImg(id);
   });
 }
+
+// ── Only stream what's on screen ───────────────────────────────
+// Every open MJPEG <img> is a full video stream the rover has to send. The
+// Drive and Camera tabs each have one, and a Pi Zero can't spare the CPU
+// for streams nobody is looking at — so hidden tabs (and a hidden browser
+// tab) drop their connection and reopen it when shown again.
+var STREAM_IDS = ['cam-stream', 'pip-cam'];
+
+function _streamVisible(id) {
+  var el = document.getElementById(id);
+  if (!el || document.hidden) return false;
+  var tab = el.closest('.tab-content');
+  return !tab || tab.classList.contains('active');
+}
+
+function syncStreams() {
+  STREAM_IDS.forEach(function(id) {
+    var el = document.getElementById(id);
+    if (!el || el.tagName !== 'IMG' || !el.parentNode) return;
+    if (!el.getAttribute('data-src')) el.setAttribute('data-src', el.src.split('?')[0]);
+    var playing = !!el.getAttribute('src');
+    if (_streamVisible(id)) {
+      if (!playing) _replaceStreamImg(id);
+    } else if (playing) {
+      // Swapping in a src-less clone aborts the old <img>'s connection.
+      clearTimeout(_streamRetry[id]);
+      _streamRetry[id] = null;
+      var idle = el.cloneNode(false);
+      idle.removeAttribute('src');
+      el.parentNode.replaceChild(idle, el);
+    }
+  });
+}
+
+document.addEventListener('visibilitychange', syncStreams);
+document.addEventListener('DOMContentLoaded', syncStreams);
 
 function reconnectAll() {
   _statusDisconnected = false;
