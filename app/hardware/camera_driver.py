@@ -20,6 +20,7 @@ _frame_counter: int = 0
 _running = False
 _backend: str = "none"
 _cv_cam = None
+_picam_jpeg = False  # picamera2 backend: camera delivers ready-made JPEG (USB/UVC)
 
 # USB camera hot-plug (OpenCV backend): this many failed reads in a row means
 # the camera is gone; while it's gone, look for one again this often.
@@ -69,8 +70,13 @@ try:
     from picamera2 import Picamera2
 
     _cam = Picamera2()
+    # Only USB (UVC) cameras deliver MJPEG. A CSI camera (Pi Camera, OV5647,
+    # IMX219…) comes out of the ISP as raw pixels: libcamera silently swaps
+    # MJPEG for YUYV, so the JPEG end-marker search never finds a frame.
+    # For those, ask for RGB and JPEG-encode each frame ourselves.
+    _picam_jpeg = "usb" in str(Picamera2.global_camera_info()[0].get("Id", "")).lower()
     _cam.configure(_cam.create_video_configuration(
-        main={"size": (640, 480), "format": "MJPEG"},
+        main={"size": (640, 480), "format": "MJPEG" if _picam_jpeg else "RGB888"},
     ))
     available = True
     _backend = "picamera2"
@@ -104,19 +110,28 @@ def _picamera2_loop() -> None:
     global _latest_frame, _frame_counter, _running
     try:
         _cam.start()
+        if not _picam_jpeg:
+            import simplejpeg  # ships with picamera2
+
         while _running:
             request = _cam.capture_request()
             try:
-                buf = request.make_buffer("main")
-                # buf is a numpy array preallocated to max size; find actual JPEG end
-                ff_pos = np.where((buf[:-1] == 0xFF) & (buf[1:] == 0xD9))[0]
-                if len(ff_pos):
-                    data = bytes(buf[: int(ff_pos[-1]) + 2])
-                    with _lock:
-                        _latest_frame = data
-                        _frame_counter += 1
+                if _picam_jpeg:
+                    buf = request.make_buffer("main")
+                    # buf is a numpy array preallocated to max size; find actual JPEG end
+                    ff_pos = np.where((buf[:-1] == 0xFF) & (buf[1:] == 0xD9))[0]
+                    data = bytes(buf[: int(ff_pos[-1]) + 2]) if len(ff_pos) else None
+                else:
+                    # picamera2's "RGB888" is stored B,G,R in memory
+                    data = simplejpeg.encode_jpeg(
+                        request.make_array("main"), quality=80, colorspace="BGR"
+                    )
             finally:
                 request.release()
+            if data:
+                with _lock:
+                    _latest_frame = data
+                    _frame_counter += 1
     except Exception as exc:
         _log.error("camera capture loop error: %s", exc)
         _running = False
