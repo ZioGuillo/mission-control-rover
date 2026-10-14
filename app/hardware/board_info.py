@@ -58,3 +58,49 @@ board_type = _classify(model)
 short_name = _SHORT_NAMES[board_type]
 battery_label = f"{short_name} Battery"
 battery_sub = f"powers {model or short_name}"
+
+
+# ── Unit number (which rover this is) ─────────────────────────────────
+# Every board has a factory serial number. units.txt at the repo root maps
+# each serial to a unit number, so the Pi Zero and the Jetson don't both
+# call themselves "Unit 01". scripts/install.sh registers new boards.
+# UNIT_NUMBER in .env overrides the registry.
+_SERIAL_FILE = Path("/proc/device-tree/serial-number")
+UNITS_FILE = Path(__file__).resolve().parents[2] / "units.txt"
+
+
+def _read_serial() -> str | None:
+    try:
+        raw = _SERIAL_FILE.read_bytes().decode("utf-8", errors="ignore")
+    except Exception:
+        return None
+    return raw.strip("\x00").strip() or None
+
+
+def read_units(path: Path = UNITS_FILE) -> dict[str, int]:
+    """serial → unit number, from 'serial  unit  description' lines."""
+    units: dict[str, int] = {}
+    try:
+        lines = path.read_text().splitlines()
+    except Exception:
+        return units
+    for line in lines:
+        parts = line.split("#", 1)[0].split()
+        if len(parts) >= 2 and parts[1].isdigit():
+            units[parts[0].lower()] = int(parts[1])
+    return units
+
+
+def _unit_number() -> int | None:
+    from app.config import settings
+
+    if settings.unit_number:
+        return settings.unit_number
+    if serial:
+        return read_units().get(serial.lower())
+    return None
+
+
+serial = _read_serial()
+unit_number = _unit_number()
+unit_label = f"Unit {unit_number:02d}" if unit_number else "Unit —"

@@ -242,6 +242,27 @@ else
     echo "→ .env already exists — skipping"
 fi
 
+# ── Unit number (each rover gets its own: login page "Unit 01") ───────
+# Keyed by the board's factory serial in units.txt. A board that isn't
+# registered yet gets the next free number, saved as UNIT_NUMBER in .env.
+BOARD_SERIAL=$(tr -d '\0' < /proc/device-tree/serial-number 2>/dev/null || true)
+UNIT_LINE=""
+if [ -n "$BOARD_SERIAL" ]; then
+    UNIT=$(awk -v s="${BOARD_SERIAL,,}" '!/^#/ && tolower($1)==s {print $2; exit}' "$REPO_DIR/units.txt" 2>/dev/null)
+    if [ -n "$UNIT" ]; then
+        echo "→ Unit $(printf %02d "$UNIT") (serial $BOARD_SERIAL, from units.txt)"
+    elif grep -qE '^UNIT_NUMBER=[1-9]' "$REPO_DIR/.env"; then
+        UNIT=$(grep -E '^UNIT_NUMBER=' "$REPO_DIR/.env" | cut -d= -f2)
+        echo "→ Unit $(printf %02d "$UNIT") (serial $BOARD_SERIAL, from .env)"
+    else
+        UNIT=$(( $(awk '!/^#/ && $2 ~ /^[0-9]+$/ {print $2}' "$REPO_DIR/units.txt" 2>/dev/null | sort -n | tail -1) + 1 ))
+        sed -i '/^UNIT_NUMBER=/d' "$REPO_DIR/.env"
+        echo "UNIT_NUMBER=$UNIT" >> "$REPO_DIR/.env"
+        echo "→ New board — assigned Unit $(printf %02d "$UNIT") (serial $BOARD_SERIAL)"
+    fi
+    UNIT_LINE=$(printf '%-21s %-9s %s' "$BOARD_SERIAL" "$UNIT" "$(tr -d '\0' < /proc/device-tree/model)")
+fi
+
 # ── cloudflared binary ────────────────────────────────────────────────
 if ! command -v cloudflared &>/dev/null; then
     echo "→ Downloading cloudflared"
@@ -473,6 +494,12 @@ echo ""
 LOCAL_IP=$(hostname -I | awk '{print $1}')
 ROVER_URL=$(cat "$HOME/.cloudflared/rover_url" 2>/dev/null || echo "")
 
+if [ -n "$UNIT_LINE" ] && ! grep -qi "^${BOARD_SERIAL}" "$REPO_DIR/units.txt" 2>/dev/null; then
+    echo "  Unit       : not in units.txt yet — add this line and commit,"
+    echo "               so no other rover takes the same number:"
+    echo "               $UNIT_LINE"
+    echo ""
+fi
 echo "  Local URL  : http://${LOCAL_IP}:8000"
 if [ -n "$ROVER_URL" ]; then
     echo "  Public URL : ${ROVER_URL}"

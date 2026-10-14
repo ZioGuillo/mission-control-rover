@@ -185,7 +185,7 @@
 <div class="login-card">
   <div class="login-badge">🤖</div>
   <h1 class="login-title">RoboControl</h1>
-  <p class="login-tagline">Mars Surface Ops · Unit 01</p>
+  <p class="login-tagline" title="{{ board_name }}">Mars Surface Ops · {{ unit_label }}</p>
 
   {% if status == "pending" %}
   <p class="status-msg info">Your account is awaiting admin approval.</p>

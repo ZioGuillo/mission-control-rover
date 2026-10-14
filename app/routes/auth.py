@@ -5,6 +5,7 @@ from fastapi.responses import RedirectResponse
 
 from app import auth, db, metrics as m
 from app.config import settings
+from app.hardware import board_info
 from app.templates_env import templates
 
 
@@ -23,6 +24,8 @@ async def login_page(request: Request, status: str = ""):
     return templates.TemplateResponse(request, "login.html", {
         "status": status,
         "github_enabled": github_enabled,
+        "unit_label": board_info.unit_label,
+        "board_name": board_info.model or board_info.short_name,
     })
 
 

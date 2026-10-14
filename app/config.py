@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     # without hardware"). Off by default so a real Pi/Jetson never
     # accidentally ignores its actual hardware.
     simulate: bool = False
+    # Which rover this is (login page "Unit 01"). Normally looked up from the
+    # board's serial number in units.txt; set it here only to override.
+    unit_number: Annotated[int, Field(ge=0, le=99)] = 0
 
     # .env is shared with the systemd services (WiFi portal, Cloudflare
     # provisioning, Jetson fan): ignore their keys instead of refusing to start.
