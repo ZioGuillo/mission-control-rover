@@ -139,6 +139,21 @@ def _nms(boxes_xyxy, scores, iou_threshold: float) -> list[int]:
     return keep
 
 
+def letterbox(img: "Image.Image", size: int) -> tuple["Image.Image", float, int, int]:
+    """Fit img into a size×size square without distorting it, padding the
+    rest with grey (114) — how YOLO models are trained (Ultralytics). Plain
+    resizing squashed a 640×480 frame to 320×320, making every minifigure
+    33% thinner than anything the model had seen.
+    Returns (square image, scale, pad_x, pad_y) for undoing it on the boxes."""
+    w, h = img.size
+    scale = min(size / w, size / h)
+    nw, nh = round(w * scale), round(h * scale)
+    pad_x, pad_y = (size - nw) // 2, (size - nh) // 2
+    square = Image.new("RGB", (size, size), (114, 114, 114))
+    square.paste(img.resize((nw, nh)), (pad_x, pad_y))
+    return square, scale, pad_x, pad_y
+
+
 def _run_lego_inference(frame: bytes) -> list[dict]:
     """Decodes the custom single-class YOLOv8 lego_minifigure.tflite model
     — a raw (NMS-less) export, unlike the COCO model's built-in
@@ -153,15 +168,30 @@ def _run_lego_inference(frame: bytes) -> list[dict]:
     input_details = _lego_interpreter.get_input_details()
     output_details = _lego_interpreter.get_output_details()
 
-    _, _, in_h, in_w = input_details[0]["shape"]
-    img = Image.open(io.BytesIO(frame)).convert("RGB").resize((in_w, in_h))
-    arr = np.array(img, dtype=np.float32) / 255.0
+    _, _, in_h, _ = input_details[0]["shape"]
+    img = Image.open(io.BytesIO(frame)).convert("RGB")
+    frame_w, frame_h = img.size
+    square, scale, pad_x, pad_y = letterbox(img, in_h)
+    arr = np.array(square, dtype=np.float32) / 255.0
     arr = np.transpose(arr, (2, 0, 1))[np.newaxis, :]  # HWC -> NCHW
 
     _lego_interpreter.set_tensor(input_details[0]["index"], arr)
     _lego_interpreter.invoke()
 
     raw = _lego_interpreter.get_tensor(output_details[0]["index"])[0]  # [5, N]
+    return _decode_lego(raw, in_h, scale, pad_x, pad_y, frame_w, frame_h)
+
+
+def _decode_lego(raw, size: int, scale: float, pad_x: int, pad_y: int,
+                 frame_w: int, frame_h: int) -> list[dict]:
+    """raw: [5, N] rows cx, cy, w, h (0-1 of the letterboxed square), score.
+    Boxes come back as 0-1 of the original frame, like _run_inference's."""
+    # square-relative → frame-relative: undo the padding, then the scale
+    raw = raw.copy()
+    raw[0] = (raw[0] * size - pad_x) / (scale * frame_w)
+    raw[1] = (raw[1] * size - pad_y) / (scale * frame_h)
+    raw[2] = raw[2] * size / (scale * frame_w)
+    raw[3] = raw[3] * size / (scale * frame_h)
     scores = raw[4]
     # Trained on 481 clean, single-figure product photos — a busy real
     # room scene is out of distribution, and the model occasionally fires

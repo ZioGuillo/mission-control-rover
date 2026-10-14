@@ -373,6 +373,36 @@ function sendCamera(action) {
     .catch(function() { notify('Connection lost', 'alert'); });
 }
 
+// ── Training frames (retraining the Lego detector) ─────────────
+function showTrainingCount(count) {
+  var label = document.getElementById('training-count');
+  var link = document.getElementById('training-download');
+  if (!label) return;
+  label.textContent = count ? '(' + count + ')' : '';
+  link.style.display = count ? '' : 'none';
+}
+
+function saveTrainingFrame() {
+  fetch('/api/camera/training-frame', { method: 'POST' })
+    .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+    .then(function(res) {
+      if (!res.ok) {
+        notify(res.data.detail || 'Could not save frame', 'warning');
+        return;
+      }
+      showTrainingCount(res.data.count);
+      notify('Training frame saved (' + res.data.count + ')', 'info');
+    })
+    .catch(function() { notify('Connection lost', 'alert'); });
+}
+
+if (document.getElementById('training-count')) {
+  fetch('/api/camera/training-frames')
+    .then(function(r) { return r.json(); })
+    .then(function(d) { showTrainingCount(d.count); })
+    .catch(function() {});
+}
+
 // ── Telemetry ──────────────────────────────────────────────────
 function fmtUptime(s) {
   var h = Math.floor(s / 3600);

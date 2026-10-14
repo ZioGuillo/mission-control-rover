@@ -1,11 +1,15 @@
 import asyncio
 import hashlib
 import io
+import zipfile
+from datetime import datetime
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from PIL import Image, ImageDraw
 
+from app.config import settings
 from app.hardware import camera_driver, ml_driver
 from app.hardware.servo_driver import STEP
 from app.hardware import servo_driver as driver
@@ -89,6 +93,55 @@ async def mjpeg_stream():
             )
 
     return StreamingResponse(generate(), media_type="multipart/x-mixed-replace; boundary=frame")
+
+
+# ── Training frames ────────────────────────────────────────────────────
+# Frames saved from this camera, as-is (no detection boxes drawn), to
+# retrain the Lego model on what the rover actually sees: its lens, its
+# colours, its rooms. Download the zip and label it (e.g. Roboflow), then
+# run scripts/train_lego_detector.ipynb.
+
+def _training_dir() -> Path:
+    return settings.data_dir / "training_frames"
+
+
+def _training_frames() -> list[Path]:
+    return sorted(_training_dir().glob("*.jpg"))
+
+
+@router.get("/training-frames")
+async def training_frames_count():
+    return {"count": len(_training_frames())}
+
+
+@router.post("/training-frame")
+async def save_training_frame():
+    frame = camera_driver.get_frame()
+    if frame is None:
+        raise HTTPException(status_code=503, detail="No camera frame available")
+    folder = _training_dir()
+    folder.mkdir(parents=True, exist_ok=True)
+    name = datetime.now().strftime("frame_%Y%m%d_%H%M%S_%f.jpg")
+    (folder / name).write_bytes(frame)
+    return {"ok": True, "file": name, "count": len(_training_frames())}
+
+
+@router.get("/training-frames.zip")
+async def download_training_frames():
+    frames = _training_frames()
+    if not frames:
+        raise HTTPException(status_code=404, detail="No training frames saved yet")
+    buf = io.BytesIO()
+    # JPEGs don't compress further — store them, it's much faster
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as zf:
+        for f in frames:
+            zf.write(f, f.name)
+    stamp = datetime.now().strftime("%Y%m%d")
+    return Response(
+        buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="training_frames_{stamp}.zip"'},
+    )
 
 
 @router.post("/{action}")

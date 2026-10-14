@@ -40,6 +40,15 @@ class Settings(BaseSettings):
     # is JPEG-encoded there; 10 fps ≈ a third of a Pi Zero's CPU), 30 on a
     # Jetson (hardware JPEG encoder, no CPU cost).
     camera_fps: Annotated[int, Field(ge=1, le=60)] | None = None
+    # Jetson (Argus) image tuning — the ISP's settings, so they cost no CPU.
+    # A pink cast (wide-angle / NoIR IMX219 modules) usually improves with a
+    # fixed white balance (daylight, fluorescent…) and saturation below 1.
+    camera_wb_mode: Literal[
+        "auto", "off", "incandescent", "fluorescent", "warm-fluorescent",
+        "daylight", "cloudy-daylight", "twilight", "shade", "manual",
+    ] = "auto"
+    camera_saturation: Annotated[float, Field(ge=0.0, le=2.0)] = 1.0
+    camera_exposure_comp: Annotated[float, Field(ge=-2.0, le=2.0)] = 0.0
     motor_speed_default: Annotated[float, Field(ge=0.0, le=1.0)] = 0.75
     pan_servo_pin: GpioPin = 12
     tilt_servo_pin: GpioPin = 13

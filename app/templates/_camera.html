@@ -23,6 +23,17 @@
   {% endif %}
 </div>
 
+{% if camera_available %}
+<div class="training-bar">
+  <button type="button" class="secondary outline" onclick="saveTrainingFrame()"
+          title="Save the current frame (without boxes) to retrain the Lego detector">
+    📸 Save training frame <span id="training-count"></span>
+  </button>
+  <a id="training-download" href="/api/camera/training-frames.zip" role="button"
+     class="secondary outline" style="display:none" download>⬇ Download zip</a>
+</div>
+{% endif %}
+
 <!-- Pan / Tilt controls — hidden until servo implementation is ready -->
 <!--
 <h3 style="margin-top: 1.5rem; text-align: center;">Camera Pan &amp; Tilt</h3>

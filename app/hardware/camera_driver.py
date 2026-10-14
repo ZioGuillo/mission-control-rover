@@ -128,6 +128,9 @@ def _argus_cmd(sensor_id: int, fps: int, out_fd: int) -> list[str]:
     return [
         "gst-launch-1.0", "-q",
         "nvarguscamerasrc", f"sensor-id={sensor_id}",
+        f"wbmode={settings.camera_wb_mode}",
+        f"saturation={settings.camera_saturation}",
+        f"exposurecompensation={settings.camera_exposure_comp}",
         "!", f"video/x-raw(memory:NVMM),width=1640,height=1232,framerate={fps}/1",
         "!", "nvvidconv",
         "!", "video/x-raw(memory:NVMM),width=640,height=480",

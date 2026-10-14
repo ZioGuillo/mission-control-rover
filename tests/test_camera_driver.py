@@ -239,3 +239,22 @@ def test_stop_terminates_argus_so_the_camera_is_freed(argus_backend):
     proc = cam._argus_proc
     cam.stop()
     assert _wait_for(lambda: proc.poll() is not None), "gst-launch kept running after stop()"
+
+
+def test_argus_cmd_passes_colour_tuning(monkeypatch):
+    monkeypatch.setattr(cam.settings, "camera_wb_mode", "daylight")
+    monkeypatch.setattr(cam.settings, "camera_saturation", 0.8)
+    monkeypatch.setattr(cam.settings, "camera_exposure_comp", 0.5)
+    cmd = cam._argus_cmd(0, 30, 3)
+    assert "wbmode=daylight" in cmd
+    assert "saturation=0.8" in cmd
+    assert "exposurecompensation=0.5" in cmd
+
+
+def test_invalid_wb_mode_is_rejected(monkeypatch):
+    from pydantic import ValidationError
+    from app.config import Settings
+
+    monkeypatch.setenv("CAMERA_WB_MODE", "pinkless")
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
