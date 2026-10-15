@@ -1,0 +1,6 @@
+# Training venv (Mac with Apple GPU, Linux with CUDA, or Colab):
+#   python3.11 -m venv .venv-train && .venv-train/bin/pip install -r requirements-train.txt
+ultralytics>=8.3
+transformers>=4.45   # OWLv2 pre-labelling
+torch
+pillow

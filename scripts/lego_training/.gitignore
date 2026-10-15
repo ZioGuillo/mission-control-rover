@@ -1,0 +1,10 @@
+.venv-*/
+dataset/
+runs/
+tflite_out/
+*.jpg
+*.onnx
+*.tflite
+yolov8n.pt
+# labels.json for a new batch is fine to commit (coordinates only) — the
+# frames themselves stay out of git: they can show people.

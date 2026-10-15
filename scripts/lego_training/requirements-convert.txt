@@ -1,0 +1,11 @@
+# Separate venv for ONNX → TFLite: TensorFlow next to the training venv's
+# PyTorch pulls in conflicting versions.
+#   python3.11 -m venv .venv-convert && .venv-convert/bin/pip install -r requirements-convert.txt
+tensorflow>=2.16,<2.20
+tf_keras
+onnx2tf
+onnx
+onnx_graphsurgeon
+sng4onnx
+psutil
+pillow
