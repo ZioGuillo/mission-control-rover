@@ -95,10 +95,11 @@
   <h2>Computer Vision</h2>
   <p style="color:var(--pico-muted-color);font-size:0.85rem">
     When enabled, ML object detection runs on the live camera feed and draws
-    bounding boxes for all connected users. Uses MobileNet SSD v1 (80 COCO classes).
+    bounding boxes for all connected users: 80 COCO classes (people, animals,
+    everyday objects) plus Lego minifigures.
   </p>
   {% if ml_available %}
-  <p style="color:#2dc653;font-size:0.85rem">Model: loaded ✓</p>
+  <p style="color:#2dc653;font-size:0.85rem">Model: loaded ✓ — {{ ml_backend }}</p>
   {% elif not ml_library_available %}
   <p style="color:#e53935;font-size:0.85rem">
     Inference library not available —

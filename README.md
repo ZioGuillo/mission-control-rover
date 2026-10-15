@@ -469,6 +469,7 @@ All settings live in `~/robocontrol/.env`:
 | `CAMERA_WB_MODE` | `auto` | Jetson only: ISP white balance (`daylight`, `fluorescent`, … — see `.env.example`). Try a fixed mode for a pink cast |
 | `CAMERA_SATURATION` | `1.0` | Jetson only: 0–2 |
 | `CAMERA_EXPOSURE_COMP` | `0` | Jetson only: −2 to 2 exposure stops |
+| `ML_BACKEND` | `auto` | `auto` = GPU (TensorRT) on a Jetson once `scripts/build_trt_engines.sh` has built the engines (≈35 ms per frame vs ≈500 ms on the CPU), else TFLite on the CPU; or force `tensorrt` / `tflite` |
 | `MOTOR_SPEED_DEFAULT` | `0.75` | Default motor power (0.0–1.0) |
 | `OBSTACLE_THRESHOLD_CM` | `20` | Sonar distance (cm) that triggers auto-stop |
 | `PAN_SERVO_PIN` | `12` | GPIO pin for pan servo |

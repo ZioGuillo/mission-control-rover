@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     ] = "auto"
     camera_saturation: Annotated[float, Field(ge=0.0, le=2.0)] = 1.0
     camera_exposure_comp: Annotated[float, Field(ge=-2.0, le=2.0)] = 0.0
+    # ML detection backend. "auto": the GPU (TensorRT) on a Jetson once
+    # scripts/build_trt_engines.sh has built the engines, TFLite on the CPU
+    # otherwise — and as the fallback if the GPU worker fails.
+    ml_backend: Literal["auto", "tensorrt", "tflite"] = "auto"
     motor_speed_default: Annotated[float, Field(ge=0.0, le=1.0)] = 0.75
     pan_servo_pin: GpioPin = 12
     tilt_servo_pin: GpioPin = 13

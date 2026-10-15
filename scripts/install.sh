@@ -432,6 +432,14 @@ if [ -e /sys/devices/pwm-fan/target_pwm ]; then
     sudo systemctl restart jetson-fan.service
 fi
 
+# Jetson only: ML detection on the GPU needs TensorRT engines, built on
+# this board (~10 min per model) — not done here so the install stays
+# quick; the app detects on the CPU until they exist.
+if [ -x /usr/src/tensorrt/bin/trtexec ]; then
+    chmod +x "$REPO_DIR/scripts/build_trt_engines.sh"
+    echo "→ GPU detection: run scripts/build_trt_engines.sh once (≈20 min), then restart the app"
+fi
+
 # Reboot automatically on kernel panic instead of sitting frozen.
 echo "→ Setting kernel.panic=10 (auto-reboot 10s after a kernel panic)"
 echo "kernel.panic = 10" | sudo tee /etc/sysctl.d/90-robocontrol.conf >/dev/null

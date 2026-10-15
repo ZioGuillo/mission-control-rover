@@ -4,7 +4,8 @@ import threading
 import time
 from pathlib import Path
 
-from app.hardware import camera_driver
+from app.config import settings
+from app.hardware import board_info, camera_driver
 
 _log = logging.getLogger(__name__)
 
@@ -33,6 +34,42 @@ lego_available = False
 
 model_found = _MODEL_PATH.exists() and _LABELS_PATH.exists()
 
+# ── GPU backend (Jetson) ──────────────────────────────────────────────
+# TensorRT engines built from these ONNX models by
+# scripts/build_trt_engines.sh. An engine only runs on the GPU and TensorRT
+# version it was built with, so engines live in data_dir, not in git.
+# YOLOv8n replaces EfficientDet for COCO here: EfficientDet's TFLite-only
+# post-processing op has no TensorRT equivalent. The TFLite models above
+# stay loaded as the fallback if the GPU worker fails.
+COCO_ONNX = _MODELS_DIR / "yolov8n_coco.onnx"
+COCO80_LABELS = _MODELS_DIR / "coco80_labels.txt"
+LEGO_ONNX = _MODELS_DIR / "lego_minifigure.onnx"
+TRT_DIR = settings.data_dir / "trt"
+
+
+def engine_path(onnx: Path) -> Path:
+    return TRT_DIR / f"{onnx.stem}.engine"
+
+
+def wants_tensorrt(requested: str, board_type: str, engines_exist: bool) -> bool:
+    """ML_BACKEND=auto uses the GPU on a Jetson once engines are built."""
+    if requested == "tflite":
+        return False
+    if requested == "tensorrt":
+        return True
+    return board_type == "jetson" and engines_exist
+
+
+_trt = None  # trt_client.TrtWorker while the GPU backend is running
+_trt_coco: int | None = None  # engine indexes in the worker
+_trt_lego: int | None = None
+_coco80: list[str] = []
+backend = "none"  # "tensorrt" | "tflite" | "none" — what detection actually runs on
+_want_trt = wants_tensorrt(
+    settings.ml_backend, board_info.board_type,
+    engine_path(COCO_ONNX).exists() or engine_path(LEGO_ONNX).exists(),
+)
+
 try:
     import numpy as np
     from PIL import Image
@@ -59,9 +96,62 @@ try:
     # `available` gates whether the detection loop runs at all — either
     # detector being ready is enough, each degrades independently below.
     available = available or lego_available
+    if available:
+        backend = "tflite"
 except Exception as exc:
     library_error = str(exc)
     _log.debug("ml_driver unavailable: %s", exc)
+
+if _want_trt:
+    # The GPU worker itself starts in the detection thread (engine loading
+    # takes seconds); here only whether it's worth trying.
+    available = True
+    lego_available = lego_available or engine_path(LEGO_ONNX).exists()
+
+
+def backend_label() -> str:
+    if backend == "tensorrt":
+        return "GPU (TensorRT) — YOLOv8n COCO + Lego minifigure"
+    if backend == "tflite":
+        return "CPU (TFLite) — EfficientDet-Lite0 COCO + Lego minifigure"
+    return "starting…" if _want_trt else "not loaded"
+
+
+def _start_trt() -> None:
+    """Start the GPU worker; on any failure stay on TFLite."""
+    global _trt, _trt_coco, _trt_lego, _coco80, backend
+    from app.hardware.trt_client import TrtWorker
+
+    paths, coco, lego = [], None, None
+    if engine_path(COCO_ONNX).exists() and COCO80_LABELS.exists():
+        coco = len(paths)
+        paths.append(engine_path(COCO_ONNX))
+    if engine_path(LEGO_ONNX).exists():
+        lego = len(paths)
+        paths.append(engine_path(LEGO_ONNX))
+    if not paths:
+        _log.warning("ML_BACKEND=tensorrt but no engines in %s — run scripts/build_trt_engines.sh", TRT_DIR)
+        return
+    try:
+        worker = TrtWorker(paths)
+        for i in range(len(paths)):  # first run allocates on the GPU (~1.5 s); not on a real frame
+            size = worker.input_size(i)
+            worker.infer(i, np.zeros((size, size, 3), dtype=np.uint8))
+    except Exception as exc:
+        _log.warning("GPU detection unavailable, using TFLite on the CPU: %s", exc)
+        return
+    _coco80 = COCO80_LABELS.read_text().strip().splitlines() if coco is not None else []
+    _trt, _trt_coco, _trt_lego, backend = worker, coco, lego, "tensorrt"
+    _log.info("ML detection on the GPU (TensorRT): %s", [p.name for p in paths])
+
+
+def _stop_trt(reason: str) -> None:
+    global _trt, backend
+    _log.warning("GPU detection stopped (%s) — falling back to TFLite on the CPU", reason)
+    if _trt is not None:
+        _trt.close()
+    _trt = None
+    backend = "tflite" if (_interpreter is not None or _lego_interpreter is not None) else "none"
 
 
 def _run_inference(frame: bytes) -> list[dict]:
@@ -188,14 +278,14 @@ def _run_lego_inference(frame: bytes) -> list[dict]:
     return _decode_lego(raw, in_h, scale, pad_x, pad_y, frame_w, frame_h)
 
 
-def _decode_lego(raw, size: int, scale: float, pad_x: int, pad_y: int,
-                 frame_w: int, frame_h: int) -> list[dict]:
-    """raw: [5, N] rows cx, cy, w, h (of the letterboxed square), score.
-    Boxes come back as 0-1 of the original frame, like _run_inference's."""
+def _unletterbox(raw, size: int, scale: float, pad_x: int, pad_y: int,
+                 frame_w: int, frame_h: int):
+    """Copy of a YOLO output [4+C, N] with rows 0-3 (cx, cy, w, h) turned
+    from letterboxed-square coordinates into 0-1 of the original frame."""
     raw = raw.copy()
-    # Ultralytics' own TFLite export gives 0-1 coordinates; a model converted
-    # through ONNX (onnx2tf) gives pixels of the square. No real 0-1 box
-    # centre or size gets anywhere near 2.
+    # Ultralytics' own TFLite export gives 0-1 coordinates; ONNX / onnx2tf /
+    # TensorRT give pixels of the square. No real 0-1 box centre or size
+    # gets anywhere near 2.
     if raw[:4].max() > 2.0:
         raw[:4] /= size
     # square-relative → frame-relative: undo the padding, then the scale
@@ -203,6 +293,71 @@ def _decode_lego(raw, size: int, scale: float, pad_x: int, pad_y: int,
     raw[1] = (raw[1] * size - pad_y) / (scale * frame_h)
     raw[2] = raw[2] * size / (scale * frame_w)
     raw[3] = raw[3] * size / (scale * frame_h)
+    return raw
+
+
+def _xyxy(raw, mask):
+    cx, cy, w, h = raw[0, mask], raw[1, mask], raw[2, mask], raw[3, mask]
+    boxes = np.stack([cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2], axis=1)
+    return np.clip(boxes, 0.0, 1.0)
+
+
+def _decode_yolo_coco(raw, labels: list[str], size: int, scale: float, pad_x: int, pad_y: int,
+                      frame_w: int, frame_h: int, threshold: float = 0.5) -> list[dict]:
+    """YOLOv8 COCO output [4+80, N] → detections like _run_inference's.
+    Same 0.5 threshold as the EfficientDet path; NMS per class."""
+    raw = _unletterbox(raw, size, scale, pad_x, pad_y, frame_w, frame_h)
+    class_scores = raw[4:]
+    class_ids = class_scores.argmax(axis=0)
+    scores = class_scores.max(axis=0)
+    mask = scores >= threshold
+    if not mask.any():
+        return []
+    boxes, scores, class_ids = _xyxy(raw, mask), scores[mask], class_ids[mask]
+    results = []
+    for c in np.unique(class_ids):
+        idx = np.where(class_ids == c)[0]
+        for k in _nms(boxes[idx], scores[idx], iou_threshold=0.45):
+            x1, y1, x2, y2 = boxes[idx[k]]
+            results.append({
+                "label": labels[int(c)] if int(c) < len(labels) else str(int(c)),
+                "score": round(float(scores[idx[k]]), 2),
+                "box": [float(y1), float(x1), float(y2), float(x2)],
+            })
+    return results
+
+
+def _run_trt(frame: bytes) -> list[dict]:
+    """Both detectors on the GPU, from one decoded frame."""
+    img = Image.open(io.BytesIO(frame)).convert("RGB")
+    frame_w, frame_h = img.size
+    squares: dict[int, tuple] = {}
+
+    def square(size: int):
+        if size not in squares:
+            sq, scale, pad_x, pad_y = letterbox(img, size)
+            squares[size] = (np.asarray(sq), scale, pad_x, pad_y)
+        return squares[size]
+
+    found = []
+    if _trt_coco is not None:
+        size = _trt.input_size(_trt_coco)
+        arr, scale, px, py = square(size)
+        raw = _trt.infer(_trt_coco, arr)[0]
+        found += _decode_yolo_coco(raw, _coco80, size, scale, px, py, frame_w, frame_h)
+    if _trt_lego is not None:
+        size = _trt.input_size(_trt_lego)
+        arr, scale, px, py = square(size)
+        raw = _trt.infer(_trt_lego, arr)[0]
+        found += _decode_lego(raw, size, scale, px, py, frame_w, frame_h)
+    return found
+
+
+def _decode_lego(raw, size: int, scale: float, pad_x: int, pad_y: int,
+                 frame_w: int, frame_h: int) -> list[dict]:
+    """raw: [5, N] rows cx, cy, w, h (of the letterboxed square), score.
+    Boxes come back as 0-1 of the original frame, like _run_inference's."""
+    raw = _unletterbox(raw, size, scale, pad_x, pad_y, frame_w, frame_h)
     scores = raw[4]
     # Trained on 481 clean, single-figure product photos — a busy real
     # room scene is out of distribution, and the model occasionally fires
@@ -213,10 +368,8 @@ def _decode_lego(raw, size: int, scale: float, pad_x: int, pad_y: int,
     if not mask.any():
         return []
 
-    cx, cy, w, h = raw[0, mask], raw[1, mask], raw[2, mask], raw[3, mask]
+    boxes_xyxy = _xyxy(raw, mask)
     scores = scores[mask]
-    boxes_xyxy = np.stack([cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2], axis=1)
-    boxes_xyxy = np.clip(boxes_xyxy, 0.0, 1.0)
 
     keep = _nms(boxes_xyxy, scores, iou_threshold=0.45)
     results = []
@@ -230,9 +383,20 @@ def _decode_lego(raw, size: int, scale: float, pad_x: int, pad_y: int,
     return results
 
 
+def _detect(frame: bytes) -> list[dict]:
+    if _trt is not None:
+        try:
+            return _run_trt(frame)
+        except Exception as exc:
+            _stop_trt(str(exc))
+    return _run_inference(frame) + _run_lego_inference(frame)
+
+
 def _detection_loop() -> None:
     global _detections, _running
 
+    if _want_trt:
+        _start_trt()
     while _running:
         with _lock:
             is_enabled = enabled
@@ -244,13 +408,14 @@ def _detection_loop() -> None:
             time.sleep(0.5)
             continue
         try:
-            found = _run_inference(frame) + _run_lego_inference(frame)
+            found = _detect(frame)
             with _lock:
                 _detections = found
         except Exception as exc:
             _log.warning("inference error: %s", exc)
             time.sleep(2.0)
-        time.sleep(0.5)
+        # ~10 detections/s on the GPU; the CPU needs a breather between runs
+        time.sleep(0.1 if _trt is not None else 0.5)
 
 
 def start() -> None:
@@ -266,6 +431,8 @@ def start() -> None:
 def stop() -> None:
     global _running
     _running = False
+    if _trt is not None:
+        _trt.close()
 
 
 def set_enabled(value: bool) -> None:
