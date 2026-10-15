@@ -262,6 +262,19 @@ Full-size live stream. The 3×3 grid below it nudges the pan/tilt servos; the ce
 
 Detection order: **CSI camera → USB webcam → `CAMERA_STREAM_URL` → placeholder image**.
 
+**Pink or reddish camera image (Jetson, wide-angle IMX219).** Pink edges with a greenish centre is the lens, not white balance: Jetson's ISP ships tuning for the standard Pi Camera v2 lens. Install the module maker's ISP file — for the Waveshare IMX219-160 / IMX219-160 IR-CUT:
+
+```bash
+wget https://files.waveshare.com/upload/e/eb/Camera_overrides.tar.gz && tar zxvf Camera_overrides.tar.gz
+sudo systemctl stop robocontrol
+sudo cp camera_overrides.isp /var/nvidia/nvcam/settings/
+sudo chmod 664 /var/nvidia/nvcam/settings/camera_overrides.isp
+sudo chown root:root /var/nvidia/nvcam/settings/camera_overrides.isp
+sudo systemctl restart nvargus-daemon && sudo systemctl start robocontrol
+```
+
+Measured on the rover: edge-vs-centre colour gap from 0.33 to 0.03 (R/G). On an **IR-CUT** module the filter is switched by its IO pin — GND = filter in (normal colours), 3.3 V = night vision (reddish in daylight, by design); a floating pin leaves it undefined. Keep `CAMERA_WB_MODE=auto` and `CAMERA_SATURATION=1.0` afterwards.
+
 ### Missions tab
 
 ![Missions tab](images/ui_missions.png)
