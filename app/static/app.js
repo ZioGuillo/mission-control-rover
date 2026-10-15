@@ -235,7 +235,10 @@ function _pollCameraHealth() {
     .then(function(r) { return r.ok ? r.json() : null; })
     .then(function(d) {
       if (!d) return;
-      if (d.idle) { _camDeadTicks = 0; return; }  // paused, no viewer: not dead
+      // Idle = capture paused because no stream is open. Fine while no view
+      // is on screen; with one showing, our stream has dropped — count it.
+      var showing = STREAM_IDS.some(_streamVisible);
+      if (d.idle && !showing) { _camDeadTicks = 0; return; }
       if (d.counter === _camLastCounter) {
         _camDeadTicks++;
         if (_camDeadTicks >= CAM_DEAD_TICKS) {
