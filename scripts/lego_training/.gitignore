@@ -8,3 +8,6 @@ tflite_out/
 yolov8n.pt
 # labels.json for a new batch is fine to commit (coordinates only) — the
 # frames themselves stay out of git: they can show people.
+
+# The root .gitignore ignores *.json; label files are coordinates only, keep them
+!labels_*.json
