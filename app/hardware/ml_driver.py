@@ -26,6 +26,9 @@ _running = False
 SHOWN_COCO_LABELS = {"person"}
 LEGO_LABEL = "lego_minifigure"
 lego_only = False
+# Set once detection knows what it runs on: after the GPU worker has started
+# (or failed and left TFLite in charge). The startup voice check waits on it.
+backend_settled = threading.Event()
 # (finished at, seconds taken) of recent detection passes, for stats()
 _passes: collections.deque = collections.deque(maxlen=200)
 _STATS_WINDOW = 10.0  # seconds
@@ -434,6 +437,7 @@ def _detection_loop() -> None:
 
     if _want_trt:
         _start_trt()
+    backend_settled.set()
     while _running:
         with _lock:
             is_enabled = enabled

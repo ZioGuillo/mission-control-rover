@@ -16,7 +16,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 import app.routes as _routes_pkg
 from app.config import settings
-from app.hardware import servo_driver, rrb3_driver as driver, camera_driver, ml_driver, gpu_info, board_info
+from app.hardware import servo_driver, rrb3_driver as driver, camera_driver, ml_driver, gpu_info, board_info, voice
 from app.security import rate_limiter
 from app.templates_env import templates
 from app import db, metrics as m
@@ -55,6 +55,7 @@ async def lifespan(app: FastAPI):
     m.HW_AVAILABLE.labels(component="motors").set(1 if driver.available else 0)
     m.HW_AVAILABLE.labels(component="camera").set(1 if camera_driver.available else 0)
     m.HW_AVAILABLE.labels(component="servo").set(1 if servo_driver.available else 0)
+    voice.announce_startup()
     yield
     ml_driver.stop()
     camera_driver.stop()
@@ -192,5 +193,6 @@ async def index(request: Request):
             "ml_model_found": ml_driver.model_found,
             "ml_enabled": db.get_setting("ml_detection_enabled") == "true",
             "ml_lego_only": db.get_setting("ml_lego_only") == "true",
+            "voice_problem": voice.playback_problem(),
         })
     return templates.TemplateResponse(request, "base.html", ctx)

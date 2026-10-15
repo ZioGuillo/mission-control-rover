@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     # scripts/build_trt_engines.sh has built the engines, TFLite on the CPU
     # otherwise — and as the fallback if the GPU worker fails.
     ml_backend: Literal["auto", "tensorrt", "tflite"] = "auto"
+    # Mission-control radio call once all systems are up (app/hardware/voice.py).
+    # Needs a speaker (USB on a Jetson Nano). voice_device: ALSA device, e.g.
+    # plughw:1,0, when the default output isn't the speaker.
+    voice_enabled: bool = True
+    voice_device: str = ""
     motor_speed_default: Annotated[float, Field(ge=0.0, le=1.0)] = 0.75
     pan_servo_pin: GpioPin = 12
     tilt_servo_pin: GpioPin = 13

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse, Response
 
 from app import db
-from app.hardware import camera_driver, ml_driver
+from app.hardware import camera_driver, ml_driver, voice
 from app.templates_env import templates
 
 router = APIRouter(prefix="/settings")
@@ -27,6 +27,7 @@ async def settings_page(request: Request):
         "ml_model_found": ml_driver.model_found,
         "ml_enabled": db.get_setting("ml_detection_enabled") == "true",
         "ml_lego_only": db.get_setting("ml_lego_only") == "true",
+        "voice_problem": voice.playback_problem(),
     })
 
 
@@ -70,6 +71,16 @@ async def save_ml_settings(
         ml_driver.set_enabled(value == "true")
         ml_driver.set_lego_only(lego_only == "true")
     return RedirectResponse("/?tab=settings&saved=ml", status_code=302)
+
+
+@router.post("/voice-test")
+async def voice_test():
+    """Radio check: play the test call now and report whether it worked."""
+    problem = voice.playback_problem()
+    if problem:
+        return {"ok": False, "message": problem}
+    ok = voice.play(["quindar_in", "test", "quindar_out"], wait=True)
+    return {"ok": ok, "message": voice.last_result["message"]}
 
 
 @router.post("/icon")

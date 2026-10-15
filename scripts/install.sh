@@ -234,6 +234,14 @@ if ls /dev/video* &>/dev/null; then
     fi
 fi
 
+# ── Speaker permissions (mission-control voice, app/hardware/voice.py) ──
+# /dev/snd/* is root:audio 0660: without the group, aplay sees "no
+# soundcards" even with a USB speaker plugged in.
+if [ -d /dev/snd ] && ! id -nG "$CURRENT_USER" | grep -qw audio; then
+    echo "→ Adding $CURRENT_USER to the 'audio' group (rover voice)"
+    sudo usermod -aG audio "$CURRENT_USER"
+fi
+
 # ── .env ──────────────────────────────────────────────────────────────
 if [ ! -f "$REPO_DIR/.env" ]; then
     echo "→ Creating .env from .env.example"

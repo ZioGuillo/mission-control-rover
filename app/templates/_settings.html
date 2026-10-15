@@ -92,6 +92,23 @@
 </div>
 
 <div class="settings-section">
+  <h2>Mission Control Voice</h2>
+  <p style="color:var(--pico-muted-color);font-size:0.85rem">
+    After startup the rover runs a systems check and radios it in, Apollo style:
+    "All systems nominal… you are go for mission" — or which system is offline.
+    Needs a speaker (USB on a Jetson Nano). Turn it off with <code>VOICE_ENABLED=false</code> in .env.
+  </p>
+  {% if voice_problem %}
+  <p style="color:#f9a825;font-size:0.85rem">Can't play sound: {{ voice_problem }}.</p>
+  {% else %}
+  <p style="color:#2dc653;font-size:0.85rem">Speaker: ready ✓</p>
+  {% endif %}
+  <button type="button" class="secondary" onclick="voiceTest(this)" {% if voice_problem %}disabled{% endif %}>
+    📻 Radio check
+  </button>
+</div>
+
+<div class="settings-section">
   <h2>Computer Vision</h2>
   <p style="color:var(--pico-muted-color);font-size:0.85rem">
     When enabled, ML object detection runs on the live camera feed and draws

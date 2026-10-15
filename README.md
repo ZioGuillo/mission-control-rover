@@ -483,6 +483,8 @@ All settings live in `~/robocontrol/.env`:
 | `CAMERA_SATURATION` | `1.0` | Jetson only: 0–2 |
 | `CAMERA_EXPOSURE_COMP` | `0` | Jetson only: −2 to 2 exposure stops |
 | `ML_BACKEND` | `auto` | `auto` = GPU (TensorRT) on a Jetson once `scripts/build_trt_engines.sh` has built the engines (≈35 ms per frame vs ≈500 ms on the CPU), else TFLite on the CPU; or force `tensorrt` / `tflite` |
+| `VOICE_ENABLED` | `true` | Mission-control radio call after the startup systems check (needs a speaker; USB on a Jetson Nano) |
+| `VOICE_DEVICE` | *(default)* | ALSA output device, e.g. `plughw:1,0` (`aplay -l` lists them) |
 | `MOTOR_SPEED_DEFAULT` | `0.75` | Default motor power (0.0–1.0) |
 | `OBSTACLE_THRESHOLD_CM` | `20` | Sonar distance (cm) that triggers auto-stop |
 | `PAN_SERVO_PIN` | `12` | GPIO pin for pan servo |

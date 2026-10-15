@@ -497,6 +497,18 @@ if (document.getElementById('training-count')) {
     .catch(function() {});
 }
 
+// ── Mission control voice ──────────────────────────────────────
+function voiceTest(btn) {
+  btn.disabled = true;
+  fetch('/settings/voice-test', { method: 'POST' })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      notify(d.ok ? 'Radio check played on the rover' : 'No sound: ' + d.message, d.ok ? 'info' : 'warning');
+    })
+    .catch(function() { notify('Connection lost', 'alert'); })
+    .then(function() { btn.disabled = false; });
+}
+
 // ── Telemetry ──────────────────────────────────────────────────
 function fmtUptime(s) {
   var h = Math.floor(s / 3600);
