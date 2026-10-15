@@ -8,10 +8,13 @@ Three ingredients:
   real       the rover's own frames (labels.json), repeated --repeat times so
              a few hundred product photos don't drown them out
   roboflow   close-up product photos — the original training set
-  synthetic  minifigures cut out of the Roboflow photos, shrunk to the sizes
-             they appear at in a room (15–90 px) and pasted into the rover's
-             training frames. Teaches "small minifigure in a real room",
-             which the product photos alone never show.
+  synthetic  minifigures cut out of the Roboflow photos (backdrop removed),
+             shrunk to the sizes they appear at in a room (15–90 px) and
+             pasted into the rover's training frames. Teaches "small
+             minifigure in a real room", which the product photos never show.
+
+Frames with no minifigure (an empty "boxes" list) are negatives: they
+teach what isn't one — collect them where the model gets fooled.
 
 Validation frames (--val-frames: numbers as shown by review.py, or
 --val-fraction) are never trained on and never used as paste backgrounds,
@@ -51,6 +54,24 @@ def yolo_line(box: list[float], w: int, h: int) -> str:
     return f"0 {(x1 + x2) / 2 / w:.6f} {(y1 + y2) / 2 / h:.6f} {(x2 - x1) / w:.6f} {(y2 - y1) / h:.6f}"
 
 
+def cutout(crop: Image.Image, tolerance: int = 40) -> Image.Image:
+    """Mask for a minifigure crop from a product photo: transparent where the
+    pixel is close to the background colour (the median of the crop's edge
+    pixels), so the pasted figure doesn't bring its white studio backdrop.
+    Pasting whole rectangles taught the model that any small light
+    rectangle is a minifigure."""
+    import numpy as np
+    from PIL import ImageFilter
+
+    a = np.asarray(crop.convert("RGB"), dtype=np.int16)
+    edge = np.concatenate([a[0], a[-1], a[:, 0], a[:, -1]])
+    bg = np.median(edge, axis=0)
+    dist = np.abs(a - bg).max(axis=2)
+    mask = Image.fromarray(((dist > tolerance) * 255).astype("uint8"))
+    # close pinholes, then soften the edge so the paste doesn't look cut out
+    return mask.filter(ImageFilter.MaxFilter(3)).filter(ImageFilter.MinFilter(3)).filter(ImageFilter.GaussianBlur(1))
+
+
 def _overlaps(b, others) -> bool:
     return any(not (b[2] < o[0] or b[0] > o[2] or b[3] < o[1] or b[1] > o[3]) for o in others)
 
@@ -77,6 +98,8 @@ def main() -> None:
     ap.add_argument("--repeat", type=int, default=4, help="copies of each real training frame")
     ap.add_argument("--synthetic", type=int, default=400, help="pasted-minifigure frames to make")
     ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument("--no-cutout", dest="cutout", action="store_false",
+                    help="paste whole crops, backdrop included (the 2026-10-15 v1 model)")
     args = ap.parse_args()
 
     random.seed(args.seed)
@@ -142,7 +165,8 @@ def main() -> None:
                 x, y = random.randint(0, W - tw), random.randint(int(H * 0.3), H - th)
                 b = [x, y, x + tw, y + th]
                 if not _overlaps(b, boxes):
-                    bg.paste(c.resize((tw, th)), (x, y))
+                    piece = c.resize((tw, th))
+                    bg.paste(piece, (x, y), cutout(piece) if args.cutout else None)
                     boxes.append(b)
                     break
         write(bg, boxes, "train", f"syn{i:04d}")
