@@ -577,6 +577,9 @@ function pollTelemetry() {
         if (!d.ml.enabled) {
           mlEl.textContent = 'off';
           mlSub.textContent = 'enable in Settings · ' + d.ml.label;
+        } else if (d.ml.paused) {
+          mlEl.textContent = 'standby';
+          mlSub.textContent = 'runs while a camera view is open · ' + d.ml.label;
         } else if (d.ml.latency_ms == null) {
           mlEl.textContent = '…';
           mlSub.textContent = 'starting · ' + d.ml.label;

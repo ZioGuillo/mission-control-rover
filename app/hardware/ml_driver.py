@@ -33,6 +33,12 @@ backend_settled = threading.Event()
 _passes: collections.deque = collections.deque(maxlen=200)
 _STATS_WINDOW = 10.0  # seconds
 
+# Detection only runs while someone uses it: a camera view drawing boxes
+# (it polls /detections) or auto-drive. Otherwise the GPU ran ~6 passes a
+# second all day for nobody — heat and power for nothing.
+_IDLE_AFTER = 10.0  # seconds without a reader → pause
+_last_wanted = float("-inf")
+
 _MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
 _MODEL_PATH = _MODELS_DIR / "efficientdet_lite0.tflite"
 _LABELS_PATH = _MODELS_DIR / "coco_labels.txt"
@@ -425,6 +431,7 @@ def stats(now: float | None = None) -> dict:
     running = bool(_running and is_enabled and recent)
     return {
         "enabled": is_enabled,
+        "paused": is_enabled and not watched(now),
         "backend": backend,
         "label": "GPU" if backend == "tensorrt" else "CPU" if backend == "tflite" else "—",
         "fps": round(len(recent) / _STATS_WINDOW, 1) if running else 0.0,
@@ -441,7 +448,9 @@ def _detection_loop() -> None:
     while _running:
         with _lock:
             is_enabled = enabled
-        if not is_enabled:
+        if not (is_enabled and watched()):
+            with _lock:  # boxes from minutes ago aren't what the camera sees now
+                _detections = []
             time.sleep(0.2)
             continue
         frame = camera_driver.get_frame()
@@ -496,13 +505,26 @@ def set_lego_only(value: bool) -> None:
             _detections = [d for d in _detections if d["label"] == LEGO_LABEL]
 
 
+def watched(now: float | None = None) -> bool:
+    """Has anything read the detections in the last _IDLE_AFTER seconds?"""
+    now = time.monotonic() if now is None else now
+    return now - _last_wanted <= _IDLE_AFTER
+
+
+def _mark_wanted() -> None:
+    global _last_wanted
+    _last_wanted = time.monotonic()
+
+
 def get_shown_detections() -> list[dict]:
     """What the camera views draw: minifigures, plus people unless lego_only."""
+    _mark_wanted()
     with _lock:
         return [d for d in _detections
                 if d["label"] == LEGO_LABEL or (not lego_only and d["label"] in SHOWN_COCO_LABELS)]
 
 
 def get_detections() -> list[dict]:
+    _mark_wanted()
     with _lock:
         return list(_detections)

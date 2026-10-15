@@ -134,9 +134,32 @@ def test_stats_reports_passes_per_second_and_mean_latency(monkeypatch):
     monkeypatch.setattr(ml_driver, "_running", True)
     monkeypatch.setattr(ml_driver, "enabled", True)
     monkeypatch.setattr(ml_driver, "backend", "tensorrt")
+    monkeypatch.setattr(ml_driver, "_last_wanted", 109.0)
     s = ml_driver.stats(now=110.0)
-    assert s == {"enabled": True, "backend": "tensorrt", "label": "GPU",
+    assert s == {"enabled": True, "paused": False, "backend": "tensorrt", "label": "GPU",
                  "fps": 0.3, "latency_ms": 40}
+
+
+def test_detection_pauses_when_nothing_reads_it(monkeypatch):
+    monkeypatch.setattr(ml_driver, "_last_wanted", float("-inf"))
+    assert not ml_driver.watched()
+    ml_driver.get_shown_detections()       # a camera view polling for boxes
+    assert ml_driver.watched()
+    later = ml_driver._last_wanted + ml_driver._IDLE_AFTER + 1
+    assert not ml_driver.watched(now=later)
+    ml_driver.get_detections()             # auto-drive asking for obstacles
+    assert ml_driver.watched()
+
+
+def test_stats_say_paused_while_unwatched(monkeypatch):
+    import collections
+
+    monkeypatch.setattr(ml_driver, "_passes", collections.deque())
+    monkeypatch.setattr(ml_driver, "enabled", True)
+    monkeypatch.setattr(ml_driver, "_last_wanted", 50.0)
+    assert ml_driver.stats(now=100.0)["paused"] is True
+    monkeypatch.setattr(ml_driver, "enabled", False)
+    assert ml_driver.stats(now=100.0)["paused"] is False
 
 
 def test_stats_when_detection_is_off(monkeypatch):

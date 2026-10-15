@@ -80,7 +80,7 @@ def test_motor_forward_records_telemetry_via_route(client):
 
 def test_telemetry_includes_detection_speed(client):
     ml = client.get("/api/telemetry").json()["ml"]
-    assert set(ml) == {"enabled", "backend", "label", "fps", "latency_ms"}
+    assert set(ml) == {"enabled", "paused", "backend", "label", "fps", "latency_ms"}
 
 
 def test_detection_card_shown_only_when_a_detector_is_loaded(client, monkeypatch):
