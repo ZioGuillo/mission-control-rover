@@ -20,6 +20,12 @@ _labels: list[str] = []
 _lock = threading.Lock()
 _detections: list[dict] = []
 _running = False
+# What the camera views show. COCO knows 80 classes; only people are worth
+# boxing next to minifigures. Auto-drive still gets every class (see
+# get_detections) unless lego_only stops the COCO model from running at all.
+SHOWN_COCO_LABELS = {"person"}
+LEGO_LABEL = "lego_minifigure"
+lego_only = False
 # (finished at, seconds taken) of recent detection passes, for stats()
 _passes: collections.deque = collections.deque(maxlen=200)
 _STATS_WINDOW = 10.0  # seconds
@@ -344,7 +350,7 @@ def _run_trt(frame: bytes) -> list[dict]:
         return squares[size]
 
     found = []
-    if _trt_coco is not None:
+    if _trt_coco is not None and not lego_only:
         size = _trt.input_size(_trt_coco)
         arr, scale, px, py = square(size)
         raw = _trt.infer(_trt_coco, arr)[0]
@@ -393,7 +399,7 @@ def _detect(frame: bytes) -> list[dict]:
             return _run_trt(frame)
         except Exception as exc:
             _stop_trt(str(exc))
-    return _run_inference(frame) + _run_lego_inference(frame)
+    return ([] if lego_only else _run_inference(frame)) + _run_lego_inference(frame)
 
 
 def _record_pass(seconds: float) -> None:
@@ -457,6 +463,7 @@ def start() -> None:
         return
     from app import db  # local import — db not available at module import time
     enabled = db.get_setting("ml_detection_enabled") == "true"
+    set_lego_only(db.get_setting("ml_lego_only") == "true")
     _running = True
     threading.Thread(target=_detection_loop, daemon=True).start()
 
@@ -473,6 +480,23 @@ def set_enabled(value: bool) -> None:
     global enabled
     with _lock:
         enabled = value
+
+
+def set_lego_only(value: bool) -> None:
+    """Minifigures only: skip the COCO model entirely (faster, and nothing
+    else is shown). Memory-only, like set_enabled."""
+    global lego_only, _detections
+    with _lock:
+        lego_only = value
+        if value:  # don't leave a stale person box up until the next pass
+            _detections = [d for d in _detections if d["label"] == LEGO_LABEL]
+
+
+def get_shown_detections() -> list[dict]:
+    """What the camera views draw: minifigures, plus people unless lego_only."""
+    with _lock:
+        return [d for d in _detections
+                if d["label"] == LEGO_LABEL or (not lego_only and d["label"] in SHOWN_COCO_LABELS)]
 
 
 def get_detections() -> list[dict]:

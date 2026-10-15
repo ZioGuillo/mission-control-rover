@@ -95,8 +95,7 @@
   <h2>Computer Vision</h2>
   <p style="color:var(--pico-muted-color);font-size:0.85rem">
     When enabled, ML object detection runs on the live camera feed and draws
-    bounding boxes for all connected users: 80 COCO classes (people, animals,
-    everyday objects) plus Lego minifigures.
+    boxes around people and Lego minifigures for all connected users.
   </p>
   {% if ml_available %}
   <p style="color:#2dc653;font-size:0.85rem">Model: loaded ✓ — {{ ml_backend }}</p>
@@ -116,6 +115,17 @@
              {% if not ml_available %}disabled{% endif %}>
       Enable ML Object Detection
     </label>
+    <label>
+      <input type="checkbox" name="ml_lego_only" role="switch"
+             {% if ml_lego_only %}checked{% endif %}
+             {% if not ml_available %}disabled{% endif %}>
+      Minifigures only
+    </label>
+    <p style="color:var(--pico-muted-color);font-size:0.8rem;margin-top:-0.5rem">
+      Off: people + minifigures. On: only minifigures — the people/object model
+      stops running, so detection is faster, but auto-drive then avoids
+      obstacles by sonar alone.
+    </p>
     <button type="submit" {% if not ml_available %}disabled{% endif %}>
       Save
     </button>

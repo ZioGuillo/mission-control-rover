@@ -26,6 +26,7 @@ async def settings_page(request: Request):
         "ml_library_error": ml_driver.library_error,
         "ml_model_found": ml_driver.model_found,
         "ml_enabled": db.get_setting("ml_detection_enabled") == "true",
+        "ml_lego_only": db.get_setting("ml_lego_only") == "true",
     })
 
 
@@ -59,11 +60,15 @@ async def save_github_settings(
 async def save_ml_settings(
     request: Request,
     ml_enabled: str = Form(default=""),
+    ml_lego_only: str = Form(default=""),
 ):
     value = "true" if ml_enabled == "on" else "false"
+    lego_only = "true" if ml_lego_only == "on" else "false"
     db.set_setting("ml_detection_enabled", value)
+    db.set_setting("ml_lego_only", lego_only)
     if ml_driver.available:
         ml_driver.set_enabled(value == "true")
+        ml_driver.set_lego_only(lego_only == "true")
     return RedirectResponse("/?tab=settings&saved=ml", status_code=302)
 
 

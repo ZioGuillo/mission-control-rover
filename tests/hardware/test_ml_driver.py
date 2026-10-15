@@ -160,3 +160,64 @@ def test_record_pass_feeds_prometheus(monkeypatch):
     ml_driver._record_pass(0.25)
     assert metrics.ML_INFERENCE_SECONDS.labels(backend="tflite")._sum.get() == pytest.approx(before + 0.25)
     assert len(ml_driver._passes) == 1
+
+
+# ── What gets shown: people + minifigures, or minifigures only ────────
+
+_MIXED = [
+    {"label": "person", "score": 0.9, "box": [0, 0, 1, 1]},
+    {"label": "chair", "score": 0.8, "box": [0, 0, 1, 1]},
+    {"label": "lego_minifigure", "score": 0.95, "box": [0, 0, 1, 1]},
+]
+
+
+def test_default_shows_people_and_minifigures_but_autodrive_gets_all(monkeypatch):
+    monkeypatch.setattr(ml_driver, "_detections", list(_MIXED))
+    monkeypatch.setattr(ml_driver, "lego_only", False)
+    assert [d["label"] for d in ml_driver.get_shown_detections()] == ["person", "lego_minifigure"]
+    assert len(ml_driver.get_detections()) == 3  # obstacle avoidance still sees the chair
+
+
+def test_lego_only_shows_only_minifigures_and_drops_stale_boxes(monkeypatch):
+    monkeypatch.setattr(ml_driver, "_detections", list(_MIXED))
+    monkeypatch.setattr(ml_driver, "lego_only", False)
+    ml_driver.set_lego_only(True)
+    try:
+        assert [d["label"] for d in ml_driver.get_shown_detections()] == ["lego_minifigure"]
+        assert [d["label"] for d in ml_driver.get_detections()] == ["lego_minifigure"]
+    finally:
+        ml_driver.set_lego_only(False)
+
+
+def test_lego_only_skips_the_coco_model_on_the_cpu(monkeypatch):
+    calls = []
+    monkeypatch.setattr(ml_driver, "_trt", None)
+    monkeypatch.setattr(ml_driver, "_run_inference", lambda f: calls.append("coco") or [])
+    monkeypatch.setattr(ml_driver, "_run_lego_inference", lambda f: calls.append("lego") or [])
+    monkeypatch.setattr(ml_driver, "lego_only", True)
+    ml_driver._detect(b"frame")
+    assert calls == ["lego"]
+    monkeypatch.setattr(ml_driver, "lego_only", False)
+    ml_driver._detect(b"frame")
+    assert calls == ["lego", "coco", "lego"]
+
+
+def test_lego_only_skips_the_coco_engine_on_the_gpu(monkeypatch):
+    run = []
+
+    class Worker:
+        def input_size(self, i):
+            return 32
+
+        def infer(self, i, arr):
+            run.append(i)
+            return np.zeros((1, 5, 4) if i == 1 else (1, 84, 4), dtype=np.float32)
+
+    buf = io.BytesIO()
+    PIL.new("RGB", (64, 48)).save(buf, format="JPEG")
+    monkeypatch.setattr(ml_driver, "_trt", Worker())
+    monkeypatch.setattr(ml_driver, "_trt_coco", 0)
+    monkeypatch.setattr(ml_driver, "_trt_lego", 1)
+    monkeypatch.setattr(ml_driver, "lego_only", True)
+    ml_driver._run_trt(buf.getvalue())
+    assert run == [1]

@@ -93,6 +93,7 @@ def init_db() -> None:
             ("github_client_id", ""),
             ("github_client_secret", ""),
             ("ml_detection_enabled", "false"),
+            ("ml_lego_only", "false"),
         ]:
             conn.execute(
                 "INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)",

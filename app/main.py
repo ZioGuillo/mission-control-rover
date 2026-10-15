@@ -191,5 +191,6 @@ async def index(request: Request):
             "ml_library_error": ml_driver.library_error,
             "ml_model_found": ml_driver.model_found,
             "ml_enabled": db.get_setting("ml_detection_enabled") == "true",
+            "ml_lego_only": db.get_setting("ml_lego_only") == "true",
         })
     return templates.TemplateResponse(request, "base.html", ctx)

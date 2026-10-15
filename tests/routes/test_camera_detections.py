@@ -6,9 +6,12 @@ DETS = [{"label": "lego_minifigure", "score": 0.91, "box": [0.7, 0.4, 0.8, 0.5]}
 
 
 def test_detections_returned_while_detection_is_on(client):
+    chair = {"label": "chair", "score": 0.8, "box": [0, 0, 1, 1]}
     with patch("app.routes.camera.ml_driver.available", True), \
          patch("app.routes.camera.ml_driver.enabled", True), \
-         patch("app.routes.camera.ml_driver.get_detections", return_value=DETS):
+         patch("app.routes.camera.ml_driver.lego_only", False), \
+         patch("app.routes.camera.ml_driver._detections", DETS + [chair]):
+        # only people and minifigures are drawn, not every COCO class
         assert client.get("/api/camera/detections").json() == {"enabled": True, "detections": DETS}
 
 

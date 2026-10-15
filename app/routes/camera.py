@@ -39,7 +39,7 @@ async def detections():
     Boxes are [y1, x1, y2, x2], 0-1 of the camera frame."""
     if not (ml_driver.available and ml_driver.enabled):
         return {"enabled": False, "detections": []}
-    return {"enabled": True, "detections": ml_driver.get_detections()}
+    return {"enabled": True, "detections": ml_driver.get_shown_detections()}
 
 
 @router.get("/stream")

@@ -86,3 +86,16 @@ def test_change_password_success(client):
     })
     assert r.status_code == 200
     assert db_module.verify_password("BrandNewPass999!", db_module.get_user_by_username("admin")["password_hash"])
+
+
+def test_minifigures_only_switch_is_saved_and_applied(client):
+    from app import db
+    from app.hardware import ml_driver
+
+    client.post("/settings/ml", data={"ml_enabled": "on", "ml_lego_only": "on"})
+    assert db.get_setting("ml_lego_only") == "true"
+    if ml_driver.available:
+        assert ml_driver.lego_only is True
+    client.post("/settings/ml", data={"ml_enabled": "on"})  # unticked = off
+    assert db.get_setting("ml_lego_only") == "false"
+    ml_driver.set_lego_only(False)
