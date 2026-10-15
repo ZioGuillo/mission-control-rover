@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     # is JPEG-encoded there; 10 fps ≈ a third of a Pi Zero's CPU), 30 on a
     # Jetson (hardware JPEG encoder, no CPU cost).
     camera_fps: Annotated[int, Field(ge=1, le=60)] | None = None
+    # Frames per second sent to each browser. Lower than the camera rate on
+    # purpose: Wi-Fi is the bottleneck, and detection reads every camera
+    # frame anyway.
+    stream_fps: Annotated[int, Field(ge=1, le=60)] = 15
     # Jetson (Argus) image tuning — the ISP's settings, so they cost no CPU.
     # A pink cast (wide-angle / NoIR IMX219 modules) usually improves with a
     # fixed white balance (daylight, fluorescent…) and saturation below 1.

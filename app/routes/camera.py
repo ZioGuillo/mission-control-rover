@@ -1,10 +1,11 @@
 import asyncio
 import io
+import time
 import zipfile
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 
 from app.config import settings
@@ -42,28 +43,83 @@ async def detections():
     return {"enabled": True, "detections": ml_driver.get_shown_detections()}
 
 
+class StreamSlots:
+    """At most `limit` open streams per viewer; a new one ends that viewer's
+    oldest. A browser that leaks streams on reconnect (or a forgotten tab)
+    can't pile them up: six at 30 fps saturated the rover's Wi-Fi and every
+    one of them froze."""
+
+    def __init__(self, limit: int):
+        self.limit = limit
+        self._open: dict[str, list[asyncio.Event]] = {}
+
+    def open(self, viewer: str) -> asyncio.Event:
+        """Register a stream; its event is set when it should end."""
+        stop = asyncio.Event()
+        streams = self._open.setdefault(viewer, [])
+        streams.append(stop)
+        while len(streams) > self.limit:
+            streams.pop(0).set()
+        return stop
+
+    def close(self, viewer: str, stop: asyncio.Event) -> None:
+        streams = self._open.get(viewer, [])
+        if stop in streams:
+            streams.remove(stop)
+        if not streams:
+            self._open.pop(viewer, None)
+
+    def count(self, viewer: str) -> int:
+        return len(self._open.get(viewer, []))
+
+
+# Two: a Camera tab and a Drive tab may both be open in one browser.
+_streams = StreamSlots(limit=2)
+
+
+def _viewer(request: Request) -> str:
+    """One browser session. Not the IP alone: behind the Cloudflare tunnel
+    every remote viewer arrives from 127.0.0.1."""
+    token = request.session.get("token") if "session" in request.scope else None
+    ip = request.headers.get("cf-connecting-ip") or (request.client.host if request.client else "?")
+    return f"{ip}|{token or ''}"
+
+
 @router.get("/stream")
-async def mjpeg_stream():
+async def mjpeg_stream(request: Request):
     if not camera_driver.available:
         raise HTTPException(status_code=503, detail="Camera not available")
+    viewer = _viewer(request)
+    interval = 1.0 / settings.stream_fps
 
     async def generate():
+        stop = _streams.open(viewer)
         last_counter = 0
-        while True:
-            # Just a lock + compare: cheap enough to call inline. Going through
-            # the thread pool 100×/s per viewer pinned a Pi Zero's CPU.
-            frame, last_counter = camera_driver.get_frame_if_new(last_counter)
-            if frame is None:
-                await asyncio.sleep(0.03)
-                continue
-            # Frames go out untouched: detection boxes are drawn by the
-            # browser (/detections). Drawing them here meant decoding and
-            # re-encoding every frame for every viewer — 30×/s each — which
-            # starved the detection loop itself (2/s instead of ~6/s).
-            yield (
-                b"--frame\r\n"
-                b"Content-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
-            )
+        next_send = 0.0
+        try:
+            while not stop.is_set():
+                # STREAM_FPS caps what goes over Wi-Fi; detection still reads
+                # every camera frame directly.
+                wait = next_send - time.monotonic()
+                if wait > 0:
+                    await asyncio.sleep(wait)
+                # Just a lock + compare: cheap enough to call inline. Going through
+                # the thread pool 100×/s per viewer pinned a Pi Zero's CPU.
+                frame, last_counter = camera_driver.get_frame_if_new(last_counter)
+                if frame is None:
+                    await asyncio.sleep(0.03)
+                    continue
+                next_send = time.monotonic() + interval
+                # Frames go out untouched: detection boxes are drawn by the
+                # browser (/detections). Drawing them here meant decoding and
+                # re-encoding every frame for every viewer — 30×/s each — which
+                # starved the detection loop itself (2/s instead of ~6/s).
+                yield (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
+                )
+        finally:
+            _streams.close(viewer, stop)
 
     return StreamingResponse(generate(), media_type="multipart/x-mixed-replace; boundary=frame")
 

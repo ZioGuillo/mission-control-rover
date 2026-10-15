@@ -40,6 +40,16 @@ function _setStreamDead(id, dead) {
   if (corner)  corner.classList.toggle('spinning', dead);
 }
 
+// An <img> taken out of the page keeps downloading its MJPEG stream until
+// the browser garbage-collects it — every reconnect used to leave one
+// running, and six of them saturated the rover's Wi-Fi. Pointing it at a
+// tiny inline image ends the request immediately.
+var _BLANK_IMG = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+function _abortImg(el) {
+  el.onload = el.onerror = null;
+  el.src = _BLANK_IMG;
+}
+
 // Replace the <img> with a fresh clone so the browser opens a brand-new
 // connection — avoids stale MJPEG state without a full page reload.
 function _replaceStreamImg(id) {
@@ -50,6 +60,7 @@ function _replaceStreamImg(id) {
   img.setAttribute('data-src', base);
   img.removeAttribute('src');
   old.parentNode.replaceChild(img, old);
+  _abortImg(old);
   img.src = base + '?t=' + Date.now();
 }
 
@@ -108,12 +119,21 @@ function syncStreams() {
       var idle = el.cloneNode(false);
       idle.removeAttribute('src');
       el.parentNode.replaceChild(idle, el);
+      _abortImg(el);
     }
   });
 }
 
 document.addEventListener('visibilitychange', syncStreams);
 document.addEventListener('DOMContentLoaded', syncStreams);
+// Leaving or reloading the page: end the streams now rather than whenever
+// the browser gets round to it.
+window.addEventListener('pagehide', function() {
+  STREAM_IDS.forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el && el.tagName === 'IMG') _abortImg(el);
+  });
+});
 
 // ── ML detection boxes, drawn here instead of on the server ────
 // The server sends camera frames untouched (re-drawing every frame for every

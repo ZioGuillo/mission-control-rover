@@ -479,6 +479,7 @@ All settings live in `~/robocontrol/.env`:
 | `CAMERA_STREAM_URL` | *(empty)* | Fallback MJPEG URL if no local camera is detected |
 | `CAMERA_BACKEND` | `auto` | `auto` = per board (Pi → `picamera2`, Jetson → `argus`, then `opencv`); or force `picamera2` / `argus` / `opencv` |
 | `CAMERA_FPS` | *(board default)* | 10 on a Pi (CPU JPEG encoding), 30 on a Jetson (hardware encoder) |
+| `STREAM_FPS` | `15` | Frames per second sent to each browser; at most 2 streams per viewer (detection still uses every camera frame) |
 | `CAMERA_WB_MODE` | `auto` | Jetson only: ISP white balance (`daylight`, `fluorescent`, … — see `.env.example`). Try a fixed mode for a pink cast |
 | `CAMERA_SATURATION` | `1.0` | Jetson only: 0–2 |
 | `CAMERA_EXPOSURE_COMP` | `0` | Jetson only: −2 to 2 exposure stops |
