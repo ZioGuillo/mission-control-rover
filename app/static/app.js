@@ -380,6 +380,19 @@ function showTrainingCount(count) {
   if (!label) return;
   label.textContent = count ? '(' + count + ')' : '';
   link.style.display = count ? '' : 'none';
+  document.getElementById('training-clear').style.display = count ? '' : 'none';
+}
+
+function clearTrainingFrames() {
+  var label = document.getElementById('training-count').textContent;
+  if (!confirm('Delete all saved training frames ' + label + ' from the robot? Download the zip first if you still need them.')) return;
+  fetch('/api/camera/training-frames', { method: 'DELETE' })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      showTrainingCount(0);
+      notify('Deleted ' + d.deleted + ' training frames', 'info');
+    })
+    .catch(function() { notify('Connection lost', 'alert'); });
 }
 
 function saveTrainingFrame() {

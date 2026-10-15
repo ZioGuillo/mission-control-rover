@@ -158,9 +158,10 @@ def _run_lego_inference(frame: bytes) -> list[dict]:
     """Decodes the custom single-class YOLOv8 lego_minifigure.tflite model
     — a raw (NMS-less) export, unlike the COCO model's built-in
     TFLite_Detection_PostProcess op, so thresholding/NMS happen here.
-    Input is channel-first (NCHW) float32 0-1, per this model's own export
-    (see scripts/train_lego_detector.ipynb) — not the NHWC uint8 the COCO
-    model above uses, so this does not share _run_inference's preprocessing.
+    Input is float32 0-1, letterboxed; channel-first (NCHW) or channel-last
+    (NHWC) depending on the export — read from the model's input shape. Not
+    the uint8 the COCO model above uses, so this does not share
+    _run_inference's preprocessing.
     """
     if _lego_interpreter is None:
         return []
@@ -168,12 +169,17 @@ def _run_lego_inference(frame: bytes) -> list[dict]:
     input_details = _lego_interpreter.get_input_details()
     output_details = _lego_interpreter.get_output_details()
 
-    _, _, in_h, _ = input_details[0]["shape"]
+    shape = input_details[0]["shape"]
+    # Older exports take NCHW [1,3,S,S]; current Ultralytics TFLite exports NHWC [1,S,S,3]
+    channels_first = shape[1] == 3
+    in_h = shape[2] if channels_first else shape[1]
     img = Image.open(io.BytesIO(frame)).convert("RGB")
     frame_w, frame_h = img.size
     square, scale, pad_x, pad_y = letterbox(img, in_h)
     arr = np.array(square, dtype=np.float32) / 255.0
-    arr = np.transpose(arr, (2, 0, 1))[np.newaxis, :]  # HWC -> NCHW
+    if channels_first:
+        arr = np.transpose(arr, (2, 0, 1))  # HWC -> CHW
+    arr = arr[np.newaxis, :]
 
     _lego_interpreter.set_tensor(input_details[0]["index"], arr)
     _lego_interpreter.invoke()
@@ -184,10 +190,15 @@ def _run_lego_inference(frame: bytes) -> list[dict]:
 
 def _decode_lego(raw, size: int, scale: float, pad_x: int, pad_y: int,
                  frame_w: int, frame_h: int) -> list[dict]:
-    """raw: [5, N] rows cx, cy, w, h (0-1 of the letterboxed square), score.
+    """raw: [5, N] rows cx, cy, w, h (of the letterboxed square), score.
     Boxes come back as 0-1 of the original frame, like _run_inference's."""
-    # square-relative → frame-relative: undo the padding, then the scale
     raw = raw.copy()
+    # Ultralytics' own TFLite export gives 0-1 coordinates; a model converted
+    # through ONNX (onnx2tf) gives pixels of the square. No real 0-1 box
+    # centre or size gets anywhere near 2.
+    if raw[:4].max() > 2.0:
+        raw[:4] /= size
+    # square-relative → frame-relative: undo the padding, then the scale
     raw[0] = (raw[0] * size - pad_x) / (scale * frame_w)
     raw[1] = (raw[1] * size - pad_y) / (scale * frame_h)
     raw[2] = raw[2] * size / (scale * frame_w)

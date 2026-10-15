@@ -323,7 +323,9 @@ def _argus_loop() -> None:
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
-                preexec_fn=_die_with_parent,
+                # Linux-only (prctl); running Python in a forked child of a
+                # threaded process can crash on macOS, where there's no Argus anyway
+                preexec_fn=_die_with_parent if sys.platform.startswith("linux") else None,
             )
         except OSError as exc:
             os.close(r)

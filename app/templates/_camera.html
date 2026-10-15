@@ -23,7 +23,7 @@
   {% endif %}
 </div>
 
-{% if camera_available %}
+{% if camera_available and training_capture %}
 <div class="training-bar">
   <button type="button" class="secondary outline" onclick="saveTrainingFrame()"
           title="Save the current frame (without boxes) to retrain the Lego detector">
@@ -31,6 +31,10 @@
   </button>
   <a id="training-download" href="/api/camera/training-frames.zip" role="button"
      class="secondary outline" style="display:none" download>⬇ Download zip</a>
+  <button type="button" id="training-clear" class="secondary outline" style="display:none"
+          onclick="clearTrainingFrames()" title="Delete all saved training frames from the robot">
+    🗑 Clear
+  </button>
 </div>
 {% endif %}
 

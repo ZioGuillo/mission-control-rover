@@ -53,3 +53,22 @@ def test_training_routes_need_login(data_dir):
     with TestClient(app, follow_redirects=False) as anon:
         assert anon.post("/api/camera/training-frame").status_code in (302, 401, 403)
         assert anon.get("/api/camera/training-frames.zip").status_code in (302, 401, 403)
+
+
+def test_clear_deletes_all_saved_frames(client, data_dir):
+    with patch("app.routes.camera.camera_driver.get_frame", return_value=JPEG):
+        client.post("/api/camera/training-frame")
+        client.post("/api/camera/training-frame")
+    r = client.delete("/api/camera/training-frames")
+    assert r.json() == {"ok": True, "deleted": 2}
+    assert client.get("/api/camera/training-frames").json() == {"count": 0}
+
+
+@pytest.mark.parametrize("board, shown", [("jetson", True), ("raspberry_pi", False), ("unknown", False)])
+def test_training_bar_only_on_jetson(client, monkeypatch, board, shown):
+    from app.hardware import board_info
+
+    monkeypatch.setattr(board_info, "board_type", board)
+    monkeypatch.setattr("app.main.camera_driver.available", True)
+    html = client.get("/").text
+    assert ("saveTrainingFrame()" in html) is shown

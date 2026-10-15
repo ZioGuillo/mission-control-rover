@@ -126,6 +126,14 @@ async def save_training_frame():
     return {"ok": True, "file": name, "count": len(_training_frames())}
 
 
+@router.delete("/training-frames")
+async def clear_training_frames():
+    frames = _training_frames()
+    for f in frames:
+        f.unlink(missing_ok=True)
+    return {"ok": True, "deleted": len(frames)}
+
+
 @router.get("/training-frames.zip")
 async def download_training_frames():
     frames = _training_frames()

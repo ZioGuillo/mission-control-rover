@@ -27,6 +27,7 @@ def test_stop_does_not_crash():
 
 
 # ── Lego detector: letterbox preprocessing ────────────────────────────
+import io  # noqa: E402
 import numpy as np  # noqa: E402
 import pytest  # noqa: E402
 
@@ -73,3 +74,50 @@ def test_lego_low_scores_and_huge_boxes_are_dropped():
     raw = _raw((0.5, 0.5, 0.2, 0.2, 0.1),   # below the 0.3 threshold
                (0.5, 0.5, 1.0, 0.75, 0.95))  # fills the whole frame
     assert ml_driver._decode_lego(raw, 320, 0.5, 0, 40, 640, 480) == []
+
+
+class FakeLegoInterpreter:
+    """Records the input tensor; returns one confident box in the middle."""
+
+    def __init__(self, shape):
+        self.shape = shape
+        self.fed = None
+
+    def get_input_details(self):
+        return [{"shape": np.array(self.shape), "index": 0}]
+
+    def get_output_details(self):
+        return [{"index": 1}]
+
+    def set_tensor(self, _index, arr):
+        self.fed = arr
+
+    def invoke(self):
+        pass
+
+    def get_tensor(self, _index):
+        return np.array([[[0.5], [0.5], [0.1], [0.1], [0.9]]], dtype=np.float32)
+
+
+@pytest.mark.parametrize("shape, fed_shape", [
+    ((1, 3, 320, 320), (1, 3, 320, 320)),   # older NCHW export
+    ((1, 416, 416, 3), (1, 416, 416, 3)),   # current Ultralytics NHWC export
+])
+def test_lego_inference_handles_both_tensor_layouts(monkeypatch, shape, fed_shape):
+    fake = FakeLegoInterpreter(shape)
+    monkeypatch.setattr(ml_driver, "_lego_interpreter", fake)
+    buf = io.BytesIO()
+    PIL.new("RGB", (640, 480), (10, 20, 30)).save(buf, format="JPEG")
+    [det] = ml_driver._run_lego_inference(buf.getvalue())
+    assert fake.fed.shape == fed_shape
+    assert fake.fed.dtype == np.float32 and fake.fed.max() <= 1.0
+    assert det["label"] == "lego_minifigure"
+
+
+def test_lego_pixel_coordinates_are_treated_like_normalized_ones():
+    # same box as test_lego_boxes_are_mapped_back_to_the_frame, in square pixels
+    norm = _raw((0.5, 0.5, 80 / 320, 120 / 320, 0.9))
+    px = _raw((160, 160, 80, 120, 0.9))
+    a = ml_driver._decode_lego(norm, 320, 0.5, 0, 40, 640, 480)
+    b = ml_driver._decode_lego(px, 320, 0.5, 0, 40, 640, 480)
+    assert a[0]["box"] == pytest.approx(b[0]["box"])
