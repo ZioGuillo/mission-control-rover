@@ -10,7 +10,15 @@ On real rover frames it scored 0.01–0.04 and found nothing.
 | Model | Held-out real frames |
 | ----- | -------------------- |
 | Roboflow photos only (320 px) | 0 / 10 minifigures |
-| + 13 rover frames + synthetic pastes (416 px), 2026-10-15 | 8 / 10, 0 false boxes |
+| + 13 rover frames + synthetic pastes (416 px), 2026-10-15 v1 | 8 / 10, but 7 false boxes on 8 empty frames |
+| v2: + 26 negative frames, pasted figures cut out of their backdrop | **9 / 10, 0 false boxes** |
+
+v1 was only tested on frames that contained a minifigure, so its false
+positives (small light objects, a box on the dresser — "small light
+rectangle" was what its pasted, backdrop-included figures taught it) only
+showed up live. Always hold out some empty frames too. v2's labels:
+`labels_2026-10-15_v2.json` (46 frames: 20 with figures, 26 negatives);
+test frames `--val-frames 3,7,11,13,18,20,22,25,29,33,36,39,42,45`.
 
 It still misses large close-ups held right in front of the lens — save more
 of those next time.
