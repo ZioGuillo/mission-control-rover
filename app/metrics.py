@@ -16,7 +16,7 @@ from prometheus_client import Counter, Gauge, Histogram, Info
 
 # ── Build info ───────────────────────────────────────────────────────
 BUILD_INFO = Info("robocar_build", "RoboControl build information")
-BUILD_INFO.info({"version": "2.0", "hardware": "rpi4"})
+# hardware is filled in at startup (app/main.py) from board_info
 
 # ── System ───────────────────────────────────────────────────────────
 CPU_PERCENT      = Gauge("robocar_cpu_percent",

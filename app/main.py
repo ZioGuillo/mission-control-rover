@@ -17,7 +17,7 @@ from starlette.middleware.sessions import SessionMiddleware
 import app.routes as _routes_pkg
 from app.config import settings
 from app.hardware import servo_driver, rrb3_driver as driver, camera_driver, ml_driver, gpu_info, board_info, voice
-from app.security import rate_limiter
+from app.security import client_ip, rate_limiter
 from app.templates_env import templates
 from app import db, metrics as m
 
@@ -52,6 +52,7 @@ async def lifespan(app: FastAPI):
     ml_driver.start()
     await _ready_wiggle()
     # Seed hardware availability gauges once at startup
+    m.BUILD_INFO.info({"version": "2.0", "hardware": board_info.board_type})
     m.HW_AVAILABLE.labels(component="motors").set(1 if driver.available else 0)
     m.HW_AVAILABLE.labels(component="camera").set(1 if camera_driver.available else 0)
     m.HW_AVAILABLE.labels(component="servo").set(1 if servo_driver.available else 0)
@@ -108,6 +109,21 @@ async def metrics_middleware(request: Request, call_next):
     return response
 
 
+_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",            # no clickjacking the drive controls
+    "Referrer-Policy": "same-origin",
+}
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    for name, value in _SECURITY_HEADERS.items():
+        response.headers.setdefault(name, value)
+    return response
+
+
 @app.middleware("http")
 async def auth_guard(request: Request, call_next):
     path = request.url.path
@@ -115,10 +131,10 @@ async def auth_guard(request: Request, call_next):
     if path.startswith("/static") or path in _PUBLIC_PATHS:
         return await call_next(request)
 
-    # Brute-force protection on login
+    # Brute-force protection on login: 10 tries a minute per address (it
+    # was 5 a second — 400 000 guesses a day).
     if path == "/login" and request.method == "POST":
-        client_ip = request.client.host if request.client else "unknown"
-        if not rate_limiter.is_allowed(f"login:{client_ip}", 5):
+        if not rate_limiter.is_allowed(f"login:{client_ip(request)}", 10, window=60):
             m.RATE_LIMIT_HITS_TOTAL.labels(endpoint="login").inc()
             return JSONResponse(
                 {"ok": False, "message": "Too many login attempts — please wait"},
@@ -139,8 +155,7 @@ async def auth_guard(request: Request, call_next):
     if (settings.motor_rate_limit > 0
             and path.startswith("/api/motors/")
             and request.method == "POST"):
-        client_ip = request.client.host if request.client else "unknown"
-        if not rate_limiter.is_allowed(f"motor:{client_ip}", settings.motor_rate_limit):
+        if not rate_limiter.is_allowed(f"motor:{client_ip(request)}", settings.motor_rate_limit):
             m.RATE_LIMIT_HITS_TOTAL.labels(endpoint="motors").inc()
             return JSONResponse(
                 {"ok": False, "message": "Rate limit exceeded — slow down"},

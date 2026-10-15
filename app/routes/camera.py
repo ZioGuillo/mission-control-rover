@@ -12,6 +12,7 @@ from app.config import settings
 from app.hardware import camera_driver, ml_driver
 from app.hardware.servo_driver import STEP
 from app.hardware import servo_driver as driver
+from app.security import client_ip
 
 router = APIRouter(prefix="/api/camera")
 
@@ -81,8 +82,7 @@ def _viewer(request: Request) -> str:
     """One browser session. Not the IP alone: behind the Cloudflare tunnel
     every remote viewer arrives from 127.0.0.1."""
     token = request.session.get("token") if "session" in request.scope else None
-    ip = request.headers.get("cf-connecting-ip") or (request.client.host if request.client else "?")
-    return f"{ip}|{token or ''}"
+    return f"{client_ip(request)}|{token or ''}"
 
 
 @router.get("/stream")

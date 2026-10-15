@@ -180,6 +180,9 @@ def create_session(user_id: int) -> str:
     token = secrets.token_hex(32)
     expires = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
     with get_conn() as conn:
+        # Expired sessions are never valid again; don't keep them around.
+        conn.execute("DELETE FROM sessions WHERE expires_at <= ?",
+                     (datetime.now(timezone.utc).isoformat(),))
         conn.execute(
             "INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
             (token, user_id, expires),

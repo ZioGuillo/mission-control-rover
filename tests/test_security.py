@@ -130,3 +130,31 @@ def test_revoking_user_kills_their_live_session_end_to_end(client, tmp_path, mon
         r2 = bob_client.get("/api/status")
         assert r2.status_code == 302
         assert "/login" in r2.headers["location"]
+
+
+def test_login_attempts_limited_per_minute_not_per_second():
+    from app.security import RateLimiter
+    limiter = RateLimiter()
+    assert all(limiter.is_allowed("login:x", 10, window=60) for _ in range(10))
+    assert not limiter.is_allowed("login:x", 10, window=60)
+    assert limiter.is_allowed("login:other", 10, window=60)
+
+
+def test_forwarded_client_ip_only_trusted_from_the_tunnel():
+    from app.security import client_ip
+
+    class Req:
+        def __init__(self, peer, headers):
+            self.client = type("C", (), {"host": peer})()
+            self.headers = headers
+
+    spoof = {"cf-connecting-ip": "1.2.3.4"}
+    assert client_ip(Req("127.0.0.1", spoof)) == "1.2.3.4"
+    assert client_ip(Req("192.168.1.50", spoof)) == "192.168.1.50"
+    assert client_ip(Req("127.0.0.1", {})) == "127.0.0.1"
+
+
+def test_responses_carry_security_headers(client):
+    r = client.get("/api/ping")
+    assert r.headers["X-Content-Type-Options"] == "nosniff"
+    assert r.headers["X-Frame-Options"] == "DENY"
