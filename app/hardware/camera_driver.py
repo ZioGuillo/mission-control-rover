@@ -3,6 +3,7 @@ import io
 import logging
 import math
 import os
+import select
 import shutil
 import subprocess
 import sys
@@ -28,18 +29,27 @@ _picam_jpeg = False  # picamera2 backend: camera delivers ready-made JPEG (USB/U
 _argus_proc: subprocess.Popen | None = None
 _argus_sensor: int | None = None
 
+# Argus only captures while something reads frames: a camera view, the
+# detection loop (itself paused with no viewer) or a training-frame save.
+# Capturing nobody's frames cost ~0.7 W all day. Starting again takes ~2 s.
+_IDLE_AFTER = 10.0  # seconds without a reader → stop the pipeline
+_last_wanted = float("-inf")
+_wanted = threading.Event()
+
 # ── Per-board camera profile ──────────────────────────────────────────
 # Which capture backends to try, in order, and the frame rate when
 # CAMERA_FPS isn't set. CAMERA_BACKEND in .env overrides the order.
 #   Raspberry Pi → picamera2 (libcamera + the Pi's ISP), then OpenCV for a
 #                  USB webcam. ~10 fps: JPEG encoding costs a Pi Zero's CPU.
 #   Jetson       → Argus (nvarguscamerasrc: the Jetson's ISP + hardware JPEG
-#                  encoder), then OpenCV for a USB webcam. Plain V4L2 on a
+#                  encoder), then OpenCV for a USB webcam. 15 fps: the
+#                  stream to the browser is capped at 15 (STREAM_FPS) and
+#                  detection reads ~7/s, so 30 only spent power. Plain V4L2 on a
 #                  Jetson CSI camera returns raw Bayer (a solid green image),
 #                  and holding it open while Argus starts can hang the board.
 BOARD_CAMERA = {
     "raspberry_pi": {"backends": ("picamera2", "opencv"), "fps": 10},
-    "jetson": {"backends": ("argus", "opencv"), "fps": 30},
+    "jetson": {"backends": ("argus", "opencv"), "fps": 15},
     "unknown": {"backends": ("picamera2", "opencv"), "fps": 10},
 }
 
@@ -315,6 +325,13 @@ def _argus_loop() -> None:
     global _latest_frame, _frame_counter, _argus_proc
 
     while _running:
+        if not watched():
+            # Idle, not gone: stay available so the next viewer starts it.
+            with _lock:
+                _latest_frame = None
+            _wanted.wait(timeout=1.0)
+            _wanted.clear()
+            continue
         r, w = os.pipe()
         try:
             proc = subprocess.Popen(
@@ -338,8 +355,16 @@ def _argus_loop() -> None:
         _argus_proc = proc
         buf = b""
         got_frame = False
+        idle = False
         with os.fdopen(r, "rb", buffering=0) as pipe:
             while _running:
+                if not watched():
+                    idle = True
+                    with _lock:  # no stale frame for whoever looks next
+                        _latest_frame = None
+                    break
+                if not select.select([pipe], [], [], 0.5)[0]:
+                    continue
                 chunk = pipe.read(65536)
                 if not chunk:
                     break
@@ -362,6 +387,9 @@ def _argus_loop() -> None:
         _argus_proc = None
         if not _running:
             break
+        if idle:
+            _log.info("camera idle — Argus pipeline stopped until someone looks")
+            continue
         err = proc.stderr.read().decode(errors="replace").strip() if proc.stderr else ""
         _log.warning("Argus camera pipeline exited (%s) — restarting: %s",
                      proc.returncode, err[-300:])
@@ -495,13 +523,45 @@ def stop() -> None:
         proc.terminate()  # unblocks _argus_loop's read and frees the camera
 
 
+def watched(now: float | None = None) -> bool:
+    """Has anything asked for frames in the last _IDLE_AFTER seconds?"""
+    now = time.monotonic() if now is None else now
+    return now - _last_wanted <= _IDLE_AFTER
+
+
+def idle() -> bool:
+    """Capture paused for lack of viewers (Argus only; the camera is fine)."""
+    return _backend == "argus" and not watched()
+
+
+def want() -> None:
+    """Someone needs frames: keep capturing, or start again."""
+    global _last_wanted
+    _last_wanted = time.monotonic()
+    _wanted.set()
+
+
+def wait_for_frame(timeout: float = 4.0) -> bytes | None:
+    """The latest frame, waiting for the camera to start if it was idle."""
+    deadline = time.monotonic() + timeout
+    while True:
+        frame = get_frame()
+        if frame is not None or time.monotonic() >= deadline:
+            return frame
+        time.sleep(0.1)
+
+
 def get_frame() -> bytes | None:
+    want()
     with _lock:
         return _latest_frame
 
 
-def get_frame_if_new(last_counter: int) -> tuple[bytes | None, int]:
-    """Return (frame, counter). frame is None when no new frame since last_counter."""
+def get_frame_if_new(last_counter: int, wanted: bool = True) -> tuple[bytes | None, int]:
+    """Return (frame, counter). frame is None when no new frame since last_counter.
+    wanted=False just peeks (the health check), without keeping the camera on."""
+    if wanted:
+        want()
     with _lock:
         if _frame_counter == last_counter:
             return None, last_counter

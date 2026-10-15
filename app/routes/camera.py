@@ -31,8 +31,10 @@ ACTION_DELTAS: dict[str, tuple[int, int]] = {
 @router.get("/health")
 async def camera_health():
     """Return current frame counter so the client can detect a frozen stream."""
-    _, counter = camera_driver.get_frame_if_new(-1)
-    return {"available": camera_driver.available, "counter": counter}
+    _, counter = camera_driver.get_frame_if_new(-1, wanted=False)
+    # idle: capture paused with no viewer — a still counter isn't a dead camera
+    return {"available": camera_driver.available, "counter": counter,
+            "idle": camera_driver.idle()}
 
 
 @router.get("/detections")
@@ -145,7 +147,7 @@ async def training_frames_count():
 
 @router.post("/training-frame")
 async def save_training_frame():
-    frame = camera_driver.get_frame()
+    frame = await asyncio.to_thread(camera_driver.wait_for_frame)
     if frame is None:
         raise HTTPException(status_code=503, detail="No camera frame available")
     folder = _training_dir()

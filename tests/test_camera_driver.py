@@ -123,7 +123,7 @@ def test_camera_backend_setting_overrides_the_board():
 
 def test_fps_defaults_per_board_unless_set(monkeypatch):
     monkeypatch.setattr(cam.settings, "camera_fps", None)
-    assert cam.camera_fps("jetson") == 30
+    assert cam.camera_fps("jetson") == 15
     assert cam.camera_fps("raspberry_pi") == 10
     monkeypatch.setattr(cam.settings, "camera_fps", 15)
     assert cam.camera_fps("jetson") == 15
@@ -184,6 +184,8 @@ def argus_backend(monkeypatch):
     monkeypatch.setattr(cam, "available", True)
     monkeypatch.setattr(cam, "_latest_frame", None)
     monkeypatch.setattr(cam, "_REDETECT_SECONDS", 0.01)
+    monkeypatch.setattr(cam, "_IDLE_AFTER", 1e9)  # always watched unless a test says otherwise
+    cam.want()
     runs = []
 
     def script(child_code):
@@ -258,3 +260,31 @@ def test_invalid_wb_mode_is_rejected(monkeypatch):
     monkeypatch.setenv("CAMERA_WB_MODE", "pinkless")
     with pytest.raises(ValidationError):
         Settings(_env_file=None)
+
+
+def test_argus_stops_with_no_viewer_and_starts_again_on_demand(argus_backend, monkeypatch):
+    script, runs = argus_backend
+    script(f"import os, time\nos.write(FD, {JPEG_A!r})\ntime.sleep(30)\n")
+    cam.start()
+    assert _wait_for(lambda: cam.get_frame() == JPEG_A)
+    proc = cam._argus_proc
+    availability = []
+    monkeypatch.setattr(cam, "_set_available", availability.append)
+
+    monkeypatch.setattr(cam, "_IDLE_AFTER", 0.2)  # nobody reads frames any more
+    cam._last_wanted = float("-inf")
+    assert _wait_for(lambda: proc.poll() is not None), "pipeline kept running with no viewer"
+    assert cam.idle() and cam._latest_frame is None
+    assert False not in availability, "an idle camera must stay available"
+
+    monkeypatch.setattr(cam, "_IDLE_AFTER", 1e9)
+    assert cam.wait_for_frame(timeout=5) == JPEG_A, "camera didn't start again for a viewer"
+    assert len(runs) == 2
+
+
+def test_health_check_does_not_keep_the_camera_on():
+    cam._last_wanted = float("-inf")
+    cam.get_frame_if_new(-1, wanted=False)
+    assert not cam.watched()
+    cam.get_frame_if_new(-1)
+    assert cam.watched()

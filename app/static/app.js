@@ -235,6 +235,7 @@ function _pollCameraHealth() {
     .then(function(r) { return r.ok ? r.json() : null; })
     .then(function(d) {
       if (!d) return;
+      if (d.idle) { _camDeadTicks = 0; return; }  // paused, no viewer: not dead
       if (d.counter === _camLastCounter) {
         _camDeadTicks++;
         if (_camDeadTicks >= CAM_DEAD_TICKS) {
