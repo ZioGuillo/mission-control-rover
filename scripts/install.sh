@@ -249,6 +249,8 @@ if [ ! -f "$REPO_DIR/.env" ]; then
 else
     echo "→ .env already exists — skipping"
 fi
+# API tokens and passphrases live here: owner-only.
+chmod 600 "$REPO_DIR/.env"
 
 # ── Unit number (each rover gets its own: login page "Unit 01") ───────
 # Keyed by the board's factory serial in units.txt. A board that isn't
@@ -433,6 +435,7 @@ if [ -e /sys/devices/pwm-fan/target_pwm ]; then
     echo "→ Installing jetson-fan.service (FAN_MODE in .env, default 1 = auto)"
     chmod +x "$REPO_DIR/scripts/jetson-fan.sh" "$REPO_DIR/scripts/fan-mode.sh"
     grep -q '^FAN_MODE=' "$REPO_DIR/.env" || printf '\nFAN_MODE=1\n' >> "$REPO_DIR/.env"
+    sudo install -o root -g root -m 755 "$REPO_DIR/scripts/jetson-fan.sh" /usr/local/sbin/robocontrol-jetson-fan.sh
     sudo cp "$REPO_DIR/scripts/jetson-fan.service" /etc/systemd/system/jetson-fan.service
     sudo sed -i "s|/home/pi/robocontrol|$REPO_DIR|g" /etc/systemd/system/jetson-fan.service
     sudo systemctl daemon-reload
