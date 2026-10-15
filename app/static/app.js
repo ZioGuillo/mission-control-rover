@@ -115,6 +115,87 @@ function syncStreams() {
 document.addEventListener('visibilitychange', syncStreams);
 document.addEventListener('DOMContentLoaded', syncStreams);
 
+// ── ML detection boxes, drawn here instead of on the server ────
+// The server sends camera frames untouched (re-drawing every frame for every
+// viewer starved the detection loop); this polls the latest detections and
+// draws them on a <canvas> laid over each visible stream.
+var DET_POLL_MS = 200;
+
+function _labelColor(label) {
+  var h = 0;
+  for (var i = 0; i < label.length; i++) h = (h * 31 + label.charCodeAt(i)) >>> 0;
+  return 'rgb(' + Math.max((h >> 16) & 255, 80) + ',' + Math.max((h >> 8) & 255, 80) + ',' +
+         Math.max(h & 255, 80) + ')';
+}
+
+// Where the frame really sits inside the <img> box: object-fit contain
+// leaves bars, cover crops (the Drive tab's picture-in-picture).
+function _frameRect(img) {
+  var bw = img.clientWidth, bh = img.clientHeight;
+  var nw = img.naturalWidth || 640, nh = img.naturalHeight || 480;
+  var fit = window.getComputedStyle(img).objectFit;
+  var s = fit === 'cover' ? Math.max(bw / nw, bh / nh)
+        : fit === 'contain' ? Math.min(bw / nw, bh / nh)
+        : null;
+  if (s === null) return { x: 0, y: 0, w: bw, h: bh };  // fill / none: stretched
+  return { x: (bw - nw * s) / 2, y: (bh - nh * s) / 2, w: nw * s, h: nh * s };
+}
+
+function drawDetections(id, detections) {
+  var img = document.getElementById(id);
+  var canvas = document.getElementById(id + '-det');
+  if (!img || !canvas) return;
+  var bw = img.clientWidth, bh = img.clientHeight;
+  canvas.style.left = img.offsetLeft + 'px';
+  canvas.style.top = img.offsetTop + 'px';
+  canvas.style.width = bw + 'px';
+  canvas.style.height = bh + 'px';
+  var dpr = window.devicePixelRatio || 1;
+  if (canvas.width !== Math.round(bw * dpr) || canvas.height !== Math.round(bh * dpr)) {
+    canvas.width = Math.round(bw * dpr);
+    canvas.height = Math.round(bh * dpr);
+  }
+  var ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, bw, bh);
+  if (!detections || !detections.length) return;
+  var r = _frameRect(img);
+  ctx.save();
+  ctx.beginPath(); ctx.rect(0, 0, bw, bh); ctx.clip();  // cover: boxes past the crop stay hidden
+  ctx.font = '12px system-ui, sans-serif';
+  ctx.lineWidth = 2;
+  detections.forEach(function(d) {
+    var x1 = r.x + d.box[1] * r.w, y1 = r.y + d.box[0] * r.h;
+    var x2 = r.x + d.box[3] * r.w, y2 = r.y + d.box[2] * r.h;
+    var color = _labelColor(d.label);
+    ctx.strokeStyle = color;
+    ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+    var text = d.label + ' ' + Math.round(d.score * 100) + '%';
+    var tw = ctx.measureText(text).width + 6;
+    var ty = Math.max(y1 - 16, 0);
+    ctx.fillStyle = color;
+    ctx.fillRect(x1, ty, tw, 16);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(text, x1 + 3, ty + 12);
+  });
+  ctx.restore();
+}
+
+var _detBusy = false;
+function pollDetections() {
+  var visible = STREAM_IDS.filter(function(id) {
+    return _streamVisible(id) && document.getElementById(id + '-det');
+  });
+  if (!visible.length || _detBusy) return;
+  _detBusy = true;
+  fetch('/api/camera/detections')
+    .then(function(r) { return r.json(); })
+    .then(function(d) { visible.forEach(function(id) { drawDetections(id, d.detections); }); })
+    .catch(function() {})
+    .then(function() { _detBusy = false; });
+}
+setInterval(pollDetections, DET_POLL_MS);
+
 function reconnectAll() {
   _statusDisconnected = false;
   var btn = document.getElementById('reconnect-btn');

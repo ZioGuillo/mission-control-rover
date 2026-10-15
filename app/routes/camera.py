@@ -1,5 +1,4 @@
 import asyncio
-import hashlib
 import io
 import zipfile
 from datetime import datetime
@@ -7,7 +6,6 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response, StreamingResponse
-from PIL import Image, ImageDraw
 
 from app.config import settings
 from app.hardware import camera_driver, ml_driver
@@ -28,42 +26,20 @@ ACTION_DELTAS: dict[str, tuple[int, int]] = {
 }
 
 
-def _label_color(label: str) -> tuple[int, int, int]:
-    h = int(hashlib.md5(label.encode()).hexdigest()[:6], 16)
-    r = max((h >> 16) & 0xFF, 80)
-    g = max((h >> 8) & 0xFF, 80)
-    b = max(h & 0xFF, 80)
-    return (r, g, b)
-
-
-def _annotate(frame: bytes, detections: list[dict]) -> bytes:
-    if not detections:
-        return frame
-    img = Image.open(io.BytesIO(frame)).convert("RGB")
-    draw = ImageDraw.Draw(img)
-    w, h = img.size
-    for det in detections:
-        y1, x1, y2, x2 = det["box"]
-        x1c = max(0, min(int(x1 * w), w - 1))
-        y1c = max(0, min(int(y1 * h), h - 1))
-        x2c = max(0, min(int(x2 * w), w - 1))
-        y2c = max(0, min(int(y2 * h), h - 1))
-        color = _label_color(det["label"])
-        draw.rectangle([x1c, y1c, x2c, y2c], outline=color, width=2)
-        text = f"{det['label']} {int(det['score'] * 100)}%"
-        text_w = len(text) * 7
-        draw.rectangle([x1c, max(y1c - 16, 0), x1c + text_w, y1c], fill=color)
-        draw.text((x1c + 2, max(y1c - 15, 0)), text, fill=(255, 255, 255))
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=85)
-    return buf.getvalue()
-
-
 @router.get("/health")
 async def camera_health():
     """Return current frame counter so the client can detect a frozen stream."""
     _, counter = camera_driver.get_frame_if_new(-1)
     return {"available": camera_driver.available, "counter": counter}
+
+
+@router.get("/detections")
+async def detections():
+    """Latest ML detections for the browser to draw over the stream.
+    Boxes are [y1, x1, y2, x2], 0-1 of the camera frame."""
+    if not (ml_driver.available and ml_driver.enabled):
+        return {"enabled": False, "detections": []}
+    return {"enabled": True, "detections": ml_driver.get_detections()}
 
 
 @router.get("/stream")
@@ -72,7 +48,6 @@ async def mjpeg_stream():
         raise HTTPException(status_code=503, detail="Camera not available")
 
     async def generate():
-        loop = asyncio.get_running_loop()
         last_counter = 0
         while True:
             # Just a lock + compare: cheap enough to call inline. Going through
@@ -81,12 +56,10 @@ async def mjpeg_stream():
             if frame is None:
                 await asyncio.sleep(0.03)
                 continue
-            if ml_driver.available and ml_driver.enabled:
-                detections = ml_driver.get_detections()
-                if detections:
-                    frame = await loop.run_in_executor(
-                        None, _annotate, frame, detections
-                    )
+            # Frames go out untouched: detection boxes are drawn by the
+            # browser (/detections). Drawing them here meant decoding and
+            # re-encoding every frame for every viewer — 30×/s each — which
+            # starved the detection loop itself (2/s instead of ~6/s).
             yield (
                 b"--frame\r\n"
                 b"Content-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"

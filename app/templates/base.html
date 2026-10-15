@@ -283,6 +283,9 @@
       color: var(--pico-secondary);
     }
 
+    /* ML detection boxes, drawn by app.js over the stream <img> */
+    .det-overlay { position: absolute; pointer-events: none; z-index: 5; }
+
     /* ── Camera tab ── */
     .camera-stream { position: relative; }
     .camera-stream iframe,

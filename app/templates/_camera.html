@@ -7,6 +7,7 @@
        alt="Live camera feed"
        onerror="onStreamError('cam-stream')"
        onload="onStreamLoad('cam-stream')">
+  <canvas id="cam-stream-det" class="det-overlay"></canvas>
   <div id="cam-stream-overlay" class="stream-overlay" style="display:none">
     <button onclick="reconnectStreams()" class="stream-reconnect-btn" title="Reconnect camera">↺</button>
   </div>

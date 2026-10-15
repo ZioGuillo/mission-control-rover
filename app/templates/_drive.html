@@ -9,6 +9,7 @@
          onclick="showTab('camera', document.querySelectorAll('.tab-btn')[1])"
          onerror="onStreamError('pip-cam')"
          onload="onStreamLoad('pip-cam')">
+    <canvas id="pip-cam-det" class="det-overlay"></canvas>
     <div id="pip-cam-overlay" class="stream-overlay" style="display:none">
       <button onclick="reconnectStreams()" class="stream-reconnect-btn" title="Reconnect camera">↺</button>
     </div>
