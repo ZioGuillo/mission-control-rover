@@ -34,15 +34,24 @@ VOICE = "en_US-joe-medium"
 VOICE_URL = "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/joe/medium/"
 RATE = 22050
 
+# Every call opens with a callsign clip, then the message. One callsign per
+# unit number (units.txt), so each rover is called by its own number;
+# app/hardware/voice.py falls back to plain "callsign" for others.
+MAX_UNIT = 20
+_NUMBERS = ("zero one two three four five six seven eight nine ten eleven twelve thirteen "
+            "fourteen fifteen sixteen seventeen eighteen nineteen twenty").split()
+
 LINES = {
-    "nominal": "RoboControl, this is Houston. All systems nominal. All systems connected. "
-               "You are go for mission.",
-    "check": "RoboControl, this is Houston. Systems check complete.",
+    "callsign": "RoboControl, this is Houston.",
+    **{f"callsign_unit_{n:02d}": f"RoboControl, unit {_NUMBERS[n]}, this is Houston."
+       for n in range(1, MAX_UNIT + 1)},
+    "nominal": "All systems nominal. All systems connected. You are go for mission.",
+    "check": "Systems check complete.",
     "camera_offline": "Camera, offline.",
     "vision_offline": "Vision, offline.",
     "motors_offline": "Motor control, offline.",
     "caution": "Proceed with caution.",
-    "test": "RoboControl, this is Houston. Radio check. How do you read?",
+    "test": "Radio check. How do you read?",
 }
 
 

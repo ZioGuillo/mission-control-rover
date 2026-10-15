@@ -6,18 +6,30 @@ import pytest
 from app.hardware import voice
 
 
-def test_all_nominal_call():
-    assert voice.sequence([]) == ["quindar_in", "nominal", "quindar_out"]
+def test_all_nominal_call_names_the_unit():
+    assert voice.sequence([], unit=2) == ["quindar_in", "callsign_unit_02", "nominal", "quindar_out"]
 
 
 def test_offline_systems_are_named_between_the_beeps():
-    assert voice.sequence(["camera", "motors"]) == [
-        "quindar_in", "check", "camera_offline", "motors_offline", "caution", "quindar_out"]
+    assert voice.sequence(["camera", "motors"], unit=1) == [
+        "quindar_in", "callsign_unit_01", "check", "camera_offline", "motors_offline",
+        "caution", "quindar_out"]
+
+
+@pytest.mark.parametrize("unit", [None, 0, 99])
+def test_board_without_a_rendered_unit_gets_the_plain_callsign(unit):
+    # no number in units.txt, or one past the rendered clips (MAX_UNIT)
+    assert voice.callsign(unit) == "callsign"
+
+
+def test_radio_check_uses_the_callsign():
+    assert voice.radio_check(3) == ["quindar_in", "callsign_unit_03", "test", "quindar_out"]
 
 
 @pytest.mark.parametrize("offline", [[], ["camera"], ["vision"], ["motors"], list(voice.COMPONENTS)])
-def test_every_clip_the_code_can_ask_for_exists(offline):
-    for clip in voice.sequence(offline):
+@pytest.mark.parametrize("unit", [None, 1, 2, 20])
+def test_every_clip_the_code_can_ask_for_exists(offline, unit):
+    for clip in voice.sequence(offline, unit) + voice.radio_check(unit):
         path = voice.AUDIO_DIR / f"{clip}.wav"
         assert path.exists(), path
         with wave.open(str(path)) as w:
@@ -51,10 +63,11 @@ def test_play_runs_aplay_with_the_files_in_order(monkeypatch):
     monkeypatch.setattr(voice, "playback_problem", lambda: None)
     monkeypatch.setattr(voice.subprocess, "run", lambda cmd, **kw: calls.append(cmd) or Done())
     monkeypatch.setattr(voice.settings, "voice_device", "plughw:1,0")
-    assert voice.play(["quindar_in", "nominal", "quindar_out"], wait=True) is True
+    assert voice.play(["quindar_in", "callsign", "nominal", "quindar_out"], wait=True) is True
     [cmd] = calls
     assert cmd[:4] == ["aplay", "-q", "-D", "plughw:1,0"]
-    assert [p.rsplit("/", 1)[-1] for p in cmd[4:]] == ["quindar_in.wav", "nominal.wav", "quindar_out.wav"]
+    assert [p.rsplit("/", 1)[-1] for p in cmd[4:]] == [
+        "quindar_in.wav", "callsign.wav", "nominal.wav", "quindar_out.wav"]
     assert voice.last_result == {"ok": True, "message": "played"}
 
 

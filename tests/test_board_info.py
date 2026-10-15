@@ -22,3 +22,9 @@ def test_repo_registry_has_unique_numbers():
     units = board_info.read_units()
     assert units, "units.txt should list at least one rover"
     assert len(set(units.values())) == len(units), "two boards share a unit number"
+
+
+def test_jetson_is_registered_as_unit_2():
+    from app.hardware import board_info
+
+    assert board_info.read_units()["1423221001972"] == 2

@@ -79,7 +79,9 @@ async def voice_test():
     problem = voice.playback_problem()
     if problem:
         return {"ok": False, "message": problem}
-    ok = voice.play(["quindar_in", "test", "quindar_out"], wait=True)
+    from app.hardware import board_info
+
+    ok = voice.play(voice.radio_check(board_info.unit_number), wait=True)
     return {"ok": ok, "message": voice.last_result["message"]}
 
 

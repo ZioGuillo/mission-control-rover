@@ -4,8 +4,8 @@ After startup, a background systems check waits for the camera to deliver
 frames and for ML detection to settle on its backend (GPU or CPU), then
 plays, framed by Apollo-style Quindar beeps:
 
-    all OK     "RoboControl, this is Houston. All systems nominal. All systems
-               connected. You are go for mission."
+    all OK     "RoboControl, unit two, this is Houston. All systems nominal.
+               All systems connected. You are go for mission."
     otherwise  "…Systems check complete. Camera, offline. … Proceed with caution."
 
 The clips are pre-rendered WAVs in app/audio (scripts/voice/render_voice.py)
@@ -49,11 +49,24 @@ def playback_problem() -> str | None:
     return None
 
 
-def sequence(offline: list[str]) -> list[str]:
+def callsign(unit: int | None) -> str:
+    """'RoboControl, unit two, this is Houston.' — or without a number when
+    this board has none (units.txt / UNIT_NUMBER) or no clip was rendered."""
+    if unit and (AUDIO_DIR / f"callsign_unit_{unit:02d}.wav").exists():
+        return f"callsign_unit_{unit:02d}"
+    return "callsign"
+
+
+def sequence(offline: list[str], unit: int | None = None) -> list[str]:
     """The clips to play for a systems check that found `offline` down."""
     if not offline:
-        return ["quindar_in", "nominal", "quindar_out"]
-    return ["quindar_in", "check", *[f"{c}_offline" for c in offline], "caution", "quindar_out"]
+        return ["quindar_in", callsign(unit), "nominal", "quindar_out"]
+    return ["quindar_in", callsign(unit), "check", *[f"{c}_offline" for c in offline],
+            "caution", "quindar_out"]
+
+
+def radio_check(unit: int | None = None) -> list[str]:
+    return ["quindar_in", callsign(unit), "test", "quindar_out"]
 
 
 def play(clips: list[str], wait: bool = False) -> bool:
@@ -114,8 +127,10 @@ def announce_startup() -> None:
         return
 
     def run() -> None:
+        from app.hardware import board_info
+
         offline = systems_check()
         _log.info("systems check: %s", "all nominal" if not offline else f"offline: {offline}")
-        play(sequence(offline), wait=True)
+        play(sequence(offline, board_info.unit_number), wait=True)
 
     threading.Thread(target=run, daemon=True, name="voice-announce").start()

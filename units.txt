@@ -4,3 +4,4 @@
 # scripts/install.sh prints a ready-to-paste line for any board not listed
 # yet; add it here and commit so every rover keeps its own unit number.
 000000005988da55      1         Raspberry Pi Zero W Rev 1.1 — RaspiRobot V3 + Kuman night-vision cam
+1423221001972         2         NVIDIA Jetson Nano Developer Kit (B01) — Waveshare IMX219-160 IR-CUT cam
