@@ -40,6 +40,14 @@ CAMERA_FRAMES_TOTAL = Counter("robocar_camera_frames_total",
                                "Total MJPEG frames captured by the camera driver")
 _cam_frame_last: int = 0  # last driver counter value seen — tracks delta
 
+# ── ML detection ─────────────────────────────────────────────────────
+# One observation per detection pass (both models on one frame).
+# Labels: backend = tensorrt (Jetson GPU) | tflite (CPU)
+ML_INFERENCE_SECONDS = Histogram("robocar_ml_inference_seconds",
+                                  "Time for one detection pass over a camera frame",
+                                  ["backend"],
+                                  buckets=[0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5])
+
 # ── Motor / movement ─────────────────────────────────────────────────
 # Labels: action = forward | reverse | left | right | stop
 MOTOR_CMDS_TOTAL    = Counter("robocar_motor_commands_total",

@@ -177,6 +177,7 @@ async def index(request: Request):
         "training_capture": board_info.board_type == "jetson",
         "motor_speed_default": settings.motor_speed_default,
         "gpu_available": gpu_info.available,
+        "ml_card": ml_driver.available,
         "user": dict(user),
     }
     if user["role"] == "admin":

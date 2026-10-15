@@ -457,6 +457,22 @@ function pollTelemetry() {
         if (gpuClock && d.gpu_clock_mhz != null) gpuClock.textContent = d.gpu_clock_mhz + ' MHz';
       }
 
+      // ML detection speed (card only present when a detector is loaded)
+      var mlEl  = document.getElementById('tel-ml');
+      var mlSub = document.getElementById('tel-ml-sub');
+      if (mlEl && d.ml) {
+        if (!d.ml.enabled) {
+          mlEl.textContent = 'off';
+          mlSub.textContent = 'enable in Settings · ' + d.ml.label;
+        } else if (d.ml.latency_ms == null) {
+          mlEl.textContent = '…';
+          mlSub.textContent = 'starting · ' + d.ml.label;
+        } else {
+          mlEl.textContent = d.ml.fps + '/s';
+          mlSub.textContent = d.ml.latency_ms + ' ms · ' + d.ml.label;
+        }
+      }
+
       // RAM
       var ramEl  = document.getElementById('tel-ram');
       var ramBar = document.getElementById('tel-ram-bar');

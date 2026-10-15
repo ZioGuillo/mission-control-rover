@@ -76,3 +76,15 @@ def test_motor_forward_records_telemetry_via_route(client):
     data = client.get("/api/telemetry").json()
     assert data["commands_sent"] >= 1
     assert data["last_command_ms"] is not None
+
+
+def test_telemetry_includes_detection_speed(client):
+    ml = client.get("/api/telemetry").json()["ml"]
+    assert set(ml) == {"enabled", "backend", "label", "fps", "latency_ms"}
+
+
+def test_detection_card_shown_only_when_a_detector_is_loaded(client, monkeypatch):
+    monkeypatch.setattr("app.main.ml_driver.available", True)
+    assert 'id="tel-ml"' in client.get("/").text
+    monkeypatch.setattr("app.main.ml_driver.available", False)
+    assert 'id="tel-ml"' not in client.get("/").text

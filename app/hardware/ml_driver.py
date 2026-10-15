@@ -1,3 +1,4 @@
+import collections
 import io
 import logging
 import threading
@@ -19,6 +20,9 @@ _labels: list[str] = []
 _lock = threading.Lock()
 _detections: list[dict] = []
 _running = False
+# (finished at, seconds taken) of recent detection passes, for stats()
+_passes: collections.deque = collections.deque(maxlen=200)
+_STATS_WINDOW = 10.0  # seconds
 
 _MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
 _MODEL_PATH = _MODELS_DIR / "efficientdet_lite0.tflite"
@@ -392,6 +396,33 @@ def _detect(frame: bytes) -> list[dict]:
     return _run_inference(frame) + _run_lego_inference(frame)
 
 
+def _record_pass(seconds: float) -> None:
+    with _lock:
+        _passes.append((time.monotonic(), seconds))
+    try:
+        from app import metrics as m
+        m.ML_INFERENCE_SECONDS.labels(backend=backend).observe(seconds)
+    except Exception:
+        pass
+
+
+def stats(now: float | None = None) -> dict:
+    """Detection speed over the last few seconds, for the Telemetry tab.
+    fps counts finished passes (each runs every model on one frame)."""
+    now = time.monotonic() if now is None else now
+    with _lock:
+        recent = [d for t, d in _passes if now - t <= _STATS_WINDOW]
+        is_enabled = enabled
+    running = bool(_running and is_enabled and recent)
+    return {
+        "enabled": is_enabled,
+        "backend": backend,
+        "label": "GPU" if backend == "tensorrt" else "CPU" if backend == "tflite" else "—",
+        "fps": round(len(recent) / _STATS_WINDOW, 1) if running else 0.0,
+        "latency_ms": round(sum(recent) / len(recent) * 1000) if running else None,
+    }
+
+
 def _detection_loop() -> None:
     global _detections, _running
 
@@ -408,7 +439,9 @@ def _detection_loop() -> None:
             time.sleep(0.5)
             continue
         try:
+            t0 = time.monotonic()
             found = _detect(frame)
+            _record_pass(time.monotonic() - t0)
             with _lock:
                 _detections = found
         except Exception as exc:

@@ -13,6 +13,7 @@ async def settings_page(request: Request):
     return templates.TemplateResponse(request, "base.html", {
         "camera_stream_url": "",
         "camera_available": camera_driver.available,
+        "ml_card": ml_driver.available,
         "motor_speed_default": 0.75,
         "user": dict(request.state.user),
         "github_enabled": db.get_setting("github_oauth_enabled") == "true",

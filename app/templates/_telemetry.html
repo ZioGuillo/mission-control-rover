@@ -37,6 +37,15 @@
   </div>
   {% endif %}
 
+  {% if ml_card %}
+  <!-- ML detection speed -->
+  <div class="telemetry-card">
+    <div class="tel-label">Detection</div>
+    <div class="tel-value" id="tel-ml">—</div>
+    <div class="tel-sub" id="tel-ml-sub" style="font-family:var(--font-mono)"></div>
+  </div>
+  {% endif %}
+
   <!-- Board battery -->
   <div class="telemetry-card">
     <div class="tel-label" id="tel-battery-board-label">Board Battery</div>

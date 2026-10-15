@@ -121,3 +121,42 @@ def test_lego_pixel_coordinates_are_treated_like_normalized_ones():
     a = ml_driver._decode_lego(norm, 320, 0.5, 0, 40, 640, 480)
     b = ml_driver._decode_lego(px, 320, 0.5, 0, 40, 640, 480)
     assert a[0]["box"] == pytest.approx(b[0]["box"])
+
+
+# ── Detection speed (Telemetry tab) ───────────────────────────────────
+
+def test_stats_reports_passes_per_second_and_mean_latency(monkeypatch):
+    import collections
+
+    passes = collections.deque([(100.0, 0.030), (101.0, 0.040), (109.5, 0.050),
+                                (85.0, 0.900)])  # the last one is outside the 10 s window
+    monkeypatch.setattr(ml_driver, "_passes", passes)
+    monkeypatch.setattr(ml_driver, "_running", True)
+    monkeypatch.setattr(ml_driver, "enabled", True)
+    monkeypatch.setattr(ml_driver, "backend", "tensorrt")
+    s = ml_driver.stats(now=110.0)
+    assert s == {"enabled": True, "backend": "tensorrt", "label": "GPU",
+                 "fps": 0.3, "latency_ms": 40}
+
+
+def test_stats_when_detection_is_off(monkeypatch):
+    import collections
+
+    monkeypatch.setattr(ml_driver, "_passes", collections.deque([(100.0, 0.5)]))
+    monkeypatch.setattr(ml_driver, "enabled", False)
+    monkeypatch.setattr(ml_driver, "backend", "tflite")
+    s = ml_driver.stats(now=101.0)
+    assert s["enabled"] is False and s["fps"] == 0.0 and s["latency_ms"] is None
+    assert s["label"] == "CPU"
+
+
+def test_record_pass_feeds_prometheus(monkeypatch):
+    import collections
+    from app import metrics
+
+    monkeypatch.setattr(ml_driver, "_passes", collections.deque(maxlen=10))
+    monkeypatch.setattr(ml_driver, "backend", "tflite")
+    before = metrics.ML_INFERENCE_SECONDS.labels(backend="tflite")._sum.get()
+    ml_driver._record_pass(0.25)
+    assert metrics.ML_INFERENCE_SECONDS.labels(backend="tflite")._sum.get() == pytest.approx(before + 0.25)
+    assert len(ml_driver._passes) == 1
