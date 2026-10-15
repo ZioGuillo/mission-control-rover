@@ -9,11 +9,11 @@ Voice: Piper "en_US-joe-medium" — its training data is CC0, so the rendered
 audio can live in the repo with no strings attached. (en_US-ryan is
 CC BY-NC-SA — avoid it.)
 
-The NASA sound, on top of the voice:
+The NASA sound, on top of the voice (knobs below LINES' constants):
   - Quindar tones: the beeps that framed every Apollo capcom call —
     2525 Hz before a transmission, 2475 Hz after, 250 ms each.
-  - Radio voice band: 300–3000 Hz band-pass, a little soft clipping and a
-    faint hiss, like an air-to-ground loop.
+  - Radio: voice pitched down 2.5 semitones, 200–3000 Hz band, soft
+    clipping, hiss, crackle and a squelch burst at key-up/release.
 The tones are separate files so the robot can frame any sequence of
 lines: quindar_in, line, line…, quindar_out (app/hardware/voice.py).
 
@@ -33,6 +33,19 @@ VOICE_DIR = Path(__file__).resolve().parent / ".voice-model"
 VOICE = "en_US-joe-medium"
 VOICE_URL = "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/joe/medium/"
 RATE = 22050
+
+# ── Sound knobs ───────────────────────────────────────────────────────
+# Deeper voice: pitch down by resampling, with Piper speaking faster by the
+# same factor first so the pace stays capcom-steady (resampling alone would
+# also slow it down). Shifts the formants too, so it sounds bigger, not
+# just lower.
+PITCH_SEMITONES = -2.5
+SPEECH_PACE = 1.08    # Piper length_scale before the pitch shift: >1 = slower
+BAND = (200, 3000)    # radio voice band, Hz (200 keeps the deeper voice's body)
+HISS = 0.05           # steady background noise, relative to the voice peak
+CRACKLE = 0.25        # strength of random crackle pops
+CRACKLES_PER_S = 9
+SQUELCH_S = 0.12      # "kshh" noise burst when the mic keys up / releases
 
 # Every call opens with a callsign clip, then the message. One callsign per
 # unit number (units.txt), so each rover is called by its own number;
@@ -72,27 +85,44 @@ def synthesize(voice, text: str) -> np.ndarray:
 
     buf = io.BytesIO()
     with wave.open(buf, "wb") as w:
-        # a touch slower and steadier than conversational — capcom cadence
-        voice.synthesize_wav(text, w, syn_config=SynthesisConfig(length_scale=1.08, noise_scale=0.5))
+        # faster by the pitch factor: resampling below stretches it back
+        voice.synthesize_wav(text, w, syn_config=SynthesisConfig(
+            length_scale=SPEECH_PACE / _pitch_factor(), noise_scale=0.5))
     buf.seek(0)
     with wave.open(buf) as w:
         rate = w.getframerate()
         audio = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float32) / 32768
-    if rate != RATE:
-        audio = signal.resample_poly(audio, RATE, rate)
-    return audio
+    # pitch down: stretch to more samples, then play at the same rate
+    return signal.resample(audio, int(len(audio) * _pitch_factor() * RATE / rate))
+
+
+def _pitch_factor() -> float:
+    return 2 ** (-PITCH_SEMITONES / 12)
+
+
+def _band_noise(rng, n: int, sos) -> np.ndarray:
+    noise = signal.sosfilt(sos, rng.normal(0, 1, n))
+    return noise / (np.abs(noise).max() + 1e-9)
 
 
 def radio(audio: np.ndarray, seed: int = 0) -> np.ndarray:
-    """Air-to-ground loop: voice band only, slightly overdriven, faint hiss."""
-    sos = signal.butter(4, [300, 3000], btype="bandpass", fs=RATE, output="sos")
-    x = signal.sosfilt(sos, audio)
-    x = np.tanh(2.2 * x / (np.abs(x).max() + 1e-9))  # soft clipping
+    """Air-to-ground loop: voice band only, overdriven, hiss and crackle,
+    with a squelch burst as the mic keys up and releases."""
+    sos = signal.butter(4, list(BAND), btype="bandpass", fs=RATE, output="sos")
     rng = np.random.default_rng(seed)
-    hiss = signal.sosfilt(sos, rng.normal(0, 1, len(x)))
-    x = x + 0.012 * hiss / (np.abs(hiss).max() + 1e-9)
     pad = np.zeros(int(0.08 * RATE))
-    return np.concatenate([pad, x, pad])
+    x = signal.sosfilt(sos, np.concatenate([pad, audio, pad]))
+    x = np.tanh(2.2 * x / (np.abs(x).max() + 1e-9))  # soft clipping
+    # hiss under the whole transmission
+    x = x + HISS * _band_noise(rng, len(x), sos)
+    # crackle: short decaying pops at random moments
+    pop = np.exp(-np.arange(int(0.004 * RATE)) / (0.0008 * RATE))
+    for at in rng.integers(0, len(x) - len(pop), int(CRACKLES_PER_S * len(x) / RATE)):
+        x[at:at + len(pop)] += CRACKLE * rng.uniform(0.3, 1.0) * rng.choice([-1, 1]) * pop
+    # squelch: a burst of louder noise at key-up and release
+    sq = int(SQUELCH_S * RATE)
+    burst = 0.35 * _band_noise(rng, sq, sos) * np.linspace(1, 0.2, sq)
+    return np.concatenate([burst, x, burst[::-1]])
 
 
 def tone(freq: float, seconds: float = 0.25) -> np.ndarray:
