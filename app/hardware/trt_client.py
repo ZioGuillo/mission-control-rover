@@ -31,10 +31,12 @@ class TrtWorker:
             [python, str(worker), *map(str, engine_paths)],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
         )
+        assert self._proc.stdin is not None and self._proc.stdout is not None  # PIPE above
+        self._stdin, self._stdout = self._proc.stdin, self._proc.stdout
         # Engine loading takes a few seconds; read the handshake off a
         # thread so a hung worker can't block app startup forever.
         line: list[bytes] = []
-        t = threading.Thread(target=lambda: line.append(self._proc.stdout.readline()), daemon=True)
+        t = threading.Thread(target=lambda: line.append(self._stdout.readline()), daemon=True)
         t.start()
         t.join(timeout)
         if not line or not line[0]:
@@ -54,8 +56,8 @@ class TrtWorker:
         payload = np.ascontiguousarray(image, dtype=np.uint8).tobytes()
         with self._lock:
             try:
-                self._proc.stdin.write(HEADER.pack(index, len(payload)) + payload)
-                self._proc.stdin.flush()
+                self._stdin.write(HEADER.pack(index, len(payload)) + payload)
+                self._stdin.flush()
                 status, n = HEADER.unpack(self._read(HEADER.size))
                 body = self._read(n)
             except (BrokenPipeError, OSError, EOFError) as exc:
@@ -67,7 +69,7 @@ class TrtWorker:
     def _read(self, n: int) -> bytes:
         buf = b""
         while len(buf) < n:
-            chunk = self._proc.stdout.read(n - len(buf))
+            chunk = self._stdout.read(n - len(buf))
             if not chunk:
                 raise EOFError("worker closed its output")
             buf += chunk

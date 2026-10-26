@@ -141,7 +141,9 @@ def _start_trt() -> None:
     global _trt, _trt_coco, _trt_lego, _coco80, backend
     from app.hardware.trt_client import TrtWorker
 
-    paths, coco, lego = [], None, None
+    paths: list[Path] = []
+    coco: int | None = None
+    lego: int | None = None
     if engine_path(COCO_ONNX).exists() and COCO80_LABELS.exists():
         coco = len(paths)
         paths.append(engine_path(COCO_ONNX))
@@ -348,6 +350,9 @@ def _decode_yolo_coco(raw, labels: list[str], size: int, scale: float, pad_x: in
 
 def _run_trt(frame: bytes) -> list[dict]:
     """Both detectors on the GPU, from one decoded frame."""
+    trt = _trt  # _stop_trt may clear the global from another thread
+    if trt is None:
+        raise RuntimeError("TensorRT worker not running")
     img = Image.open(io.BytesIO(frame)).convert("RGB")
     frame_w, frame_h = img.size
     squares: dict[int, tuple] = {}
@@ -360,14 +365,14 @@ def _run_trt(frame: bytes) -> list[dict]:
 
     found = []
     if _trt_coco is not None and not lego_only:
-        size = _trt.input_size(_trt_coco)
+        size = trt.input_size(_trt_coco)
         arr, scale, px, py = square(size)
-        raw = _trt.infer(_trt_coco, arr)[0]
+        raw = trt.infer(_trt_coco, arr)[0]
         found += _decode_yolo_coco(raw, _coco80, size, scale, px, py, frame_w, frame_h)
     if _trt_lego is not None:
-        size = _trt.input_size(_trt_lego)
+        size = trt.input_size(_trt_lego)
         arr, scale, px, py = square(size)
-        raw = _trt.infer(_trt_lego, arr)[0]
+        raw = trt.infer(_trt_lego, arr)[0]
         found += _decode_lego(raw, size, scale, px, py, frame_w, frame_h)
     return found
 

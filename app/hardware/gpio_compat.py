@@ -21,20 +21,24 @@ importing RPi.GPIO directly, so the same code runs across boards:
                              app/hardware/*.
 """
 import logging
+from typing import Any
 
 _log = logging.getLogger(__name__)
 
-GPIO = None
+# Any, not Optional: callers only touch GPIO after checking `available`.
+GPIO: Any = None
 available = False
 backend = "none"
 
 try:
-    import RPi.GPIO as GPIO  # noqa: F811 — intentional conditional import
+    import RPi.GPIO as _gpio
+    GPIO = _gpio
     available = True
     backend = "RPi.GPIO"
 except Exception:
     try:
-        import Jetson.GPIO as GPIO  # noqa: F811
+        import Jetson.GPIO as _gpio
+        GPIO = _gpio
         available = True
         backend = "Jetson.GPIO"
     except Exception:

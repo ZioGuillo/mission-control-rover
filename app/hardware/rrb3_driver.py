@@ -17,6 +17,7 @@ but that's not a substitute for physically checking your wiring.
 import logging
 import math
 import time
+from typing import Any
 
 from app.config import settings
 from app.hardware.gpio_compat import GPIO, available as _gpio_available
@@ -37,8 +38,8 @@ _ECHO_TIMEOUT_LOOPS = 10_000
 # matches the previous RRB3(battery_voltage=6, motor_voltage=3) construction
 _PWM_SCALE = 3.0 / 6.0
 
-_left_pwm = None
-_right_pwm = None
+_left_pwm: Any = None
+_right_pwm: Any = None
 _old_left_dir = -1
 _old_right_dir = -1
 

@@ -1,10 +1,11 @@
 import threading
 import time
+from typing import Any
 
 _start = time.monotonic()
 
 # Accumulated session stats (reset on server restart)
-_state = {
+_state: dict[str, Any] = {
     "commands_sent": 0,
     "obstacles_detected": 0,
     "last_obstacle_cm": None,

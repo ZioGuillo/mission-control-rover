@@ -181,7 +181,7 @@ async def auto_drive_status():
 
 
 @router.post("/{action}")
-async def motor_action(action: str, body: MotorRequest = None):
+async def motor_action(action: str, body: MotorRequest | None = None):
     if body is None:
         body = MotorRequest()
     if action not in VALID_ACTIONS:

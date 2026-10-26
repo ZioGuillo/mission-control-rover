@@ -1,10 +1,12 @@
+from typing import Any
+
 from app.config import settings
 from app.hardware.gpio_compat import GPIO, available as _has_gpio
 
 available = False
 simulated = False
-_pan_pwm = None
-_tilt_pwm = None
+_pan_pwm: Any = None
+_tilt_pwm: Any = None
 _pan_angle = 90
 _tilt_angle = 90
 

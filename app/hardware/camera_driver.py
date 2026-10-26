@@ -9,6 +9,7 @@ import subprocess
 import sys
 import threading
 import time
+from typing import Any, TypedDict
 
 import numpy as np
 
@@ -18,7 +19,7 @@ from app.hardware import board_info
 _log = logging.getLogger(__name__)
 
 available = False
-_cam = None
+_cam: Any = None  # picamera2.Picamera2 when that backend is in use
 _lock = threading.Lock()
 _latest_frame: bytes | None = None
 _frame_counter: int = 0
@@ -47,7 +48,12 @@ _wanted = threading.Event()
 #                  detection reads ~7/s, so 30 only spent power. Plain V4L2 on a
 #                  Jetson CSI camera returns raw Bayer (a solid green image),
 #                  and holding it open while Argus starts can hang the board.
-BOARD_CAMERA = {
+class _BoardCamera(TypedDict):
+    backends: tuple[str, ...]
+    fps: int
+
+
+BOARD_CAMERA: dict[str, _BoardCamera] = {
     "raspberry_pi": {"backends": ("picamera2", "opencv"), "fps": 10},
     "jetson": {"backends": ("argus", "opencv"), "fps": 15},
     "unknown": {"backends": ("picamera2", "opencv"), "fps": 10},
@@ -154,7 +160,7 @@ def split_jpegs(buf: bytes) -> tuple[list[bytes], bytes]:
     Inside a JPEG's compressed data every 0xFF is followed by 0x00, and
     nvjpegenc writes no embedded thumbnail, so the first FFD9 after an FFD8
     is that image's end."""
-    frames = []
+    frames: list[bytes] = []
     while True:
         start = buf.find(b"\xff\xd8")
         if start < 0:
@@ -323,6 +329,7 @@ def _argus_loop() -> None:
     exits (nvargus-daemon restarted, cable knocked loose) the camera counts
     as gone and the pipeline is restarted every _REDETECT_SECONDS."""
     global _latest_frame, _frame_counter, _argus_proc
+    assert _argus_sensor is not None  # this backend is only picked once a sensor is found
 
     while _running:
         if not watched():
