@@ -60,10 +60,13 @@ class BrainError(Exception):
 
 # "Dame una demo de la charla", "da la charla como si fueras yo": Bentley gives it himself, from the script.
 DEMO = re.compile(
-    r"\b(demo\w*\b.*\bcharla|charla\b.*\bdemo|(da|dame|haz|hazme|presenta|pres[eé]ntame)\s+(la|mi|tu)\s+charla|"
+    r"\b(demo\w*\b.*\bcharla|charla\b.*\bdemo|(da|dar|dame|haz|hacer|hazme|presenta|presentar|pres[eé]ntame)\s+(la|mi|tu)\s+charla|"
     r"como si (la )?(dieras|fueras yo|estuvieras en el escenario))", re.I)
-# "Sigue", "continúa", "¿y después?": go on with the demo, only right after one.
-GO_ON = re.compile(r"^\W*(\w+,?\s+)?(sigue|contin[uú]a|dale|y (despu[eé]s|luego)|lo que sigue)\b", re.I)
+# "Sigue", "¿puedes continuar?", "el siguiente acto": go on with the demo, only right after one.
+# Live 2026-10-29: "¿Puedes continuar?" missed the old "sigue|continúa" and got a rushed summary.
+GO_ON = re.compile(r"\b(sigue|segu[ií]|seguir|contin[uú]a|contin[uú]e|continuar|dale|y (despu[eé]s|luego)|"
+                   r"lo que sigue|siguiente|el resto|otro acto)\b", re.I)
+GO_ON_MAX_WORDS = 8  # "¿Qué sigue después de Marte en la exploración espacial?" is a real question
 
 
 def is_demo(history: list[dict]) -> bool:
@@ -72,7 +75,7 @@ def is_demo(history: list[dict]) -> bool:
     for i in range(len(questions) - 1, -1, -1):
         if DEMO.search(questions[i]):
             return True
-        if not GO_ON.search(questions[i]):
+        if not (GO_ON.search(questions[i]) and len(questions[i].split()) <= GO_ON_MAX_WORDS):
             return False
     return False
 

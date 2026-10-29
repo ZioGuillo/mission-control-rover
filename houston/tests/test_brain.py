@@ -363,7 +363,8 @@ def test_talk_sheet_has_the_slide_order():
 
 @pytest.mark.parametrize("question", [
     "Bentley, dame una demo de la charla", "¿Me das un demo de mi charla?",
-    "Da la charla como si fueras yo", "Hazme la charla", "Preséntame la charla, Bentley"])
+    "Da la charla como si fueras yo", "Hazme la charla", "Preséntame la charla, Bentley",
+    "puedes dar un demo de la charla que voy a dar", "¿Puedes dar la charla?"])
 def test_demo_requests_are_caught(question):
     assert is_demo(ask(question))
 
@@ -381,6 +382,10 @@ def test_sigue_continues_the_demo_only_right_after_one():
     assert is_demo(demo + [{"role": "user", "content": "Sigue, Bentley"}])
     assert is_demo(demo + [{"role": "user", "content": "Continúa"}, {"role": "assistant", "content": "…"},
                            {"role": "user", "content": "¿Y después?"}])
+    for go_on in ("¿Puedes continuar?", "Continúa, por favor", "Dame el siguiente acto", "Sigue con el resto",
+                  "Bentley, sigue", "¿Y luego?"):
+        assert is_demo(demo + [{"role": "user", "content": go_on}]), go_on
+    assert not is_demo(demo + [{"role": "user", "content": "¿Qué sigue después de Marte en la exploración espacial?"}])
     assert not is_demo(demo + [{"role": "user", "content": "¿Cuántas lunas tiene Marte?"},
                                {"role": "assistant", "content": "Dos."}, {"role": "user", "content": "Sigue"}])
 
