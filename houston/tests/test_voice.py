@@ -108,3 +108,16 @@ def test_beep_is_48k_raw_and_cached():
         raw = beep(name)
         assert len(raw) % 2 == 0 and len(raw) > 4800
         assert beep(name) is raw
+
+
+@pytest.mark.parametrize("knob, value", [("TEMPO", 0.8), ("EXAGGERATION", 0.7), ("CFG_WEIGHT", 0.5)])
+def test_cache_key_depends_on_voice_settings(make, tmp_path, monkeypatch, knob, value):
+    v, model, _ = make()
+    w = tmp_path / "reed_mx.wav"
+    w.write_bytes(b"1")
+    v.cached("hola", w)
+    v.cached("hola", w)
+    assert len(model.calls) == 1
+    monkeypatch.setattr(voice_mod, knob, value)
+    v.cached("hola", w)  # a retuned voice must not replay the old renders
+    assert len(model.calls) == 2

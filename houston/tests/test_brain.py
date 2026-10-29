@@ -1,13 +1,14 @@
 import base64
 import json
 import threading
+import time
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
 import pytest
 
 from houston import nasa, prompts
-from houston.brain import LOOK, Brain
+from houston.brain import LOOK, Brain, BrainError
 from houston.camera import CameraError
 from houston.config import Settings
 from houston.tests import fakehttp
@@ -115,7 +116,7 @@ def test_request_body(ollama):
     assert json.dumps(history) == before  # history is not mutated
     body = fake.bodies[0]
     assert body["model"] == "gpt-oss:120b"
-    assert body["stream"] is True and body["think"] == "medium" and body["keep_alive"] == "24h"
+    assert body["stream"] is True and body["think"] == "medium" and body["keep_alive"] == -1
     assert {t["function"]["name"] for t in body["tools"]} == {"mirar", "foto_del_dia", "estado_rover"}
     system = body["messages"][0]
     assert system["role"] == "system" and "Eva" in system["content"]
@@ -249,7 +250,9 @@ def test_fact_sheet_loads_without_urls_or_header():
 
 
 @pytest.mark.parametrize("question", [
-    "¿Qué ves?", "¿qué estás viendo?", "¿Puedes ver algo?", "Mírame, Fred", "¿Qué hay frente a ti?"])
+    "¿Qué ves?", "¿qué estás viendo?", "¿Puedes ver algo?", "Mírame, Fred", "¿Qué hay frente a ti?",
+    "qué ves", "¿Qué ves, Fred?", "Dime qué ves.", "¿Qué ves ahora?", "¿qué estás viendo ahí?",
+    "¿Qué ves aquí?", "¿Qué ves frente a ti?", "¿Qué ves delante de ti?", "¿Qué ves alrededor de ti?"])
 def test_look_catches_deictic_camera_questions(question):
     assert LOOK.search(question)
 
@@ -260,7 +263,9 @@ def test_look_catches_deictic_camera_questions(question):
     "¿Qué cámara tiene Perseverance?",
     "¿Cómo ves el futuro de la exploración de Marte?",
     "¿A veces ves estrellas?",
-    "¿Qué hay frente a tierra firme?", "¿Qué vestido usaban los astronautas?"])
+    "¿Qué hay frente a tierra firme?", "¿Qué vestido usaban los astronautas?",
+    "¿Qué ves en el cielo de Marte?", "¿Qué ves cuando miras las estrellas?",
+    "¿Qué estás viendo en tus datos de la NASA?"])
 def test_look_leaves_talk_questions_to_gpt_oss(question):
     assert not LOOK.search(question)
 
@@ -273,3 +278,40 @@ def test_tool_round_echoes_thinking_but_never_speaks_it(ollama, monkeypatch):
     assert out == ["Va en el sol cinco mil cincuenta y siete."]
     echoed = fake.bodies[1]["messages"][-2]
     assert echoed["role"] == "assistant" and echoed["thinking"] == "Necesito datos. Llamo la herramienta."
+
+
+def test_warm_loads_gpt_oss_and_keeps_it(ollama):
+    fake = ollama([DONE])
+    brain_for(fake.url).warm()
+    assert fake.bodies == [{"model": "gpt-oss:120b", "messages": [], "keep_alive": -1, "stream": False}]
+
+
+def test_warm_raises_when_ollama_fails(ollama):
+    fake = ollama([{"error": "model not found"}], status=404)
+    with pytest.raises((BrainError, OSError)):
+        brain_for(fake.url).warm()
+    with pytest.raises((BrainError, OSError)):
+        brain_for("http://127.0.0.1:1").warm()
+
+
+def test_slow_answer_with_nothing_said_is_failure_at_deadline(ollama):
+    hold = threading.Event()
+    fake = ollama([think("pienso"), hold, say("Tarde."), DONE])
+    brain = brain_for(fake.url)
+    brain.deadline_s = 0.3
+    t0 = time.monotonic()
+    out = list(brain.answer(ask("¿Qué es Marte?"), "Fred", FakeCamera()))
+    assert out == [Brain.FAILURE]
+    assert time.monotonic() - t0 < 2
+    hold.set()
+
+
+def test_slow_answer_after_first_sentence_stops_quietly(ollama):
+    hold = threading.Event()
+    fake = ollama([say("Primera frase. "), hold, say("Segunda."), DONE])
+    brain = brain_for(fake.url)
+    brain.deadline_s = 0.3
+    assert brain.deadline_s < Brain.DEADLINE_S == 30.0
+    out = list(brain.answer(ask("¿Qué es Marte?"), "Fred", FakeCamera()))
+    assert out == ["Primera frase."]
+    hold.set()

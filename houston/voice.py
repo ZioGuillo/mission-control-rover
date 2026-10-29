@@ -12,6 +12,8 @@ from typing import Callable, Literal
 
 FFMPEG = "/opt/homebrew/bin/ffmpeg"
 TEMPO = 0.9
+EXAGGERATION = 0.5
+CFG_WEIGHT = 0.3
 OUT_RATE = 48000
 CACHE_ROOT = Path("~/Library/Caches/houston").expanduser()
 AUDIO_DIR = Path(__file__).resolve().parent.parent / "app" / "audio"
@@ -53,7 +55,7 @@ class Voice:
         with self._lock:
             if self._model is None:
                 self._model = self._factory(self.device)
-            wav = self._model.generate(text, language_id="es", exaggeration=0.5, cfg_weight=0.3,
+            wav = self._model.generate(text, language_id="es", exaggeration=EXAGGERATION, cfg_weight=CFG_WEIGHT,
                                        audio_prompt_path=str(voice_wav))
             samples = wav.detach().cpu().numpy().astype("<f4").reshape(-1)
             rate = int(self._model.sr)
@@ -67,7 +69,8 @@ class Voice:
             voice_id = voice_wav.read_bytes()
         except OSError:
             voice_id = str(voice_wav).encode()
-        key = hashlib.sha1(text.encode() + b"\0" + voice_id).hexdigest()[:12]
+        tuning = f"{TEMPO}|{EXAGGERATION}|{CFG_WEIGHT}".encode()  # retuned voice: new renders
+        key = hashlib.sha1(text.encode() + b"\0" + voice_id + b"\0" + tuning).hexdigest()[:12]
         path = self._cache_root / voice_wav.stem / f"{_slug(text)}-{key}.raw"
         try:
             return path.read_bytes()
