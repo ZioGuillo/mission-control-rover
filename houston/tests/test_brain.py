@@ -351,3 +351,11 @@ def test_talk_sheet_is_in_the_prompt_and_bentley_can_rehearse():
     assert "seiscientos ochenta y siete" in facts or "687" in facts  # marte.md still there
     text = prompts.system("Bentley", facts)
     assert "ensayar" in text and "Sistemas que no pueden fallar" in text
+
+
+def test_talk_sheet_has_the_slide_order():
+    # Live 2026-10-29: asked what comes after the demo, Bentley couldn't name slide 22.
+    facts = prompts.load_facts()
+    for slide in ("slide 1 ", "slide 21 ", "slide 22 ", "slide 28 "):
+        assert slide in facts
+    assert "Calceta" in facts
