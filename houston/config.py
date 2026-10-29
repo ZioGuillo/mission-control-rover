@@ -44,6 +44,9 @@ class Settings:
     llm: str = "gpt-oss:120b"
     vlm: str = "qwen3.8:27b"
     conversation_timeout: float = 60.0
+    # gpt-oss reasoning effort. "low": ~0.6 s to the first word vs ~3.9 s at "medium" (2026-10-29),
+    # accurate on the fact sheets once their numbers are spelled out in words.
+    think: str = "low"
     nasa_key_file: Path = field(default_factory=lambda: DEFAULT_NASA_KEY_FILE.expanduser())
 
 

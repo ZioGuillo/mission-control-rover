@@ -131,7 +131,7 @@ class Brain:
             return
         messages = [{"role": "system", "content": prompts.system(name, self.facts, personality)}]
         messages += [dict(m) for m in history[-HISTORY_TURNS:]]
-        think = "medium"
+        think = self.settings.think
         for _ in range(MAX_TOOL_ROUNDS + 1):
             splitter, content, thinking, calls = Splitter(), "", "", []
             for msg in self._stream({"model": self.settings.llm, "think": think, "tools": TOOLS,

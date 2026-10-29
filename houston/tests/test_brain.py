@@ -116,7 +116,7 @@ def test_request_body(ollama):
     assert json.dumps(history) == before  # history is not mutated
     body = fake.bodies[0]
     assert body["model"] == "gpt-oss:120b"
-    assert body["stream"] is True and body["think"] == "medium" and body["keep_alive"] == -1
+    assert body["stream"] is True and body["think"] == "low" and body["keep_alive"] == -1
     assert {t["function"]["name"] for t in body["tools"]} == {"mirar", "foto_del_dia", "estado_rover"}
     system = body["messages"][0]
     assert system["role"] == "system" and "Eva" in system["content"]

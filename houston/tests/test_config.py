@@ -75,3 +75,13 @@ def test_filler_sound_is_a_path_next_to_the_toml(tmp_path):
     assert load(f).rovers[0].filler_sound is None
     f.write_text(TOML.replace('voice = "voices/x.wav"', 'voice = "voices/x.wav"\nfiller_sound = "audio/b.wav"'))
     assert load(f).rovers[0].filler_sound == (tmp_path / "audio/b.wav").resolve()
+
+
+def test_reasoning_level_is_low_by_default_and_configurable(tmp_path):
+    # Measured 2026-10-29: low = ~0.6 s to the first word vs ~3.9 s at medium, 18/18 numbers right
+    # once the sheets spell numbers out in words.
+    f = tmp_path / "rovers.toml"
+    f.write_text(TOML)
+    assert load(f).think == "low"
+    f.write_text(TOML.replace('llm = "other:1b"', 'llm = "other:1b"\nthink = "medium"'))
+    assert load(f).think == "medium"
