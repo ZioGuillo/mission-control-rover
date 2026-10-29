@@ -57,6 +57,7 @@ class Segmenter:
         self._peak = 0.0
         self._rmss: list[float] = []
         self._lead = 0
+        self._after_cut = False  # previous utterance ended on a max-length cut
         self._buf = bytearray()
         # onset frames are part of the ring, so keep quiet pre-roll plus the onset
         self._pre: deque[tuple[bytes, float]] = deque(maxlen=_PREROLL_FRAMES + _ONSET_FRAMES)
@@ -102,10 +103,12 @@ class Segmenter:
             loud_level = ranked[len(ranked) * 9 // 10]
             mean = sum(ranked) / len(ranked)
             spread = math.sqrt(sum((r - mean) ** 2 for r in ranked) / len(ranked)) / mean
-            if (quiet_level > self._floor * _STUCK_RATIO and loud_level < quiet_level * _STUCK_RATIO
-                    and spread < _FLAT_SPREAD):
-                # even its quietest frames are loud and the energy is flat: noise rose, not speech
+            flat_noise = (quiet_level > self._floor * _STUCK_RATIO
+                          and loud_level < quiet_level * _STUCK_RATIO and spread < _FLAT_SPREAD)
+            if flat_noise or self._after_cut:
+                # flat loud energy, or over 15 s of unbroken sound twice running: noise rose, not speech
                 self._floor = quiet_level
+                self._after_cut = True
                 self._speaking, self._voiced, self._buf = False, 0, bytearray()
                 self._pre.clear()
                 return None
@@ -115,6 +118,7 @@ class Segmenter:
             drop = max(0, self._quiet - _TAIL_FRAMES) * n
             pcm = bytes(self._buf[:len(self._buf) - drop])
             peak = self._peak
+            self._after_cut = cut and self._quiet < self._end_frames
             self._speaking, self._voiced, self._buf = False, 0, bytearray()
             self._pre.clear()
             if speech >= self._min_bytes:

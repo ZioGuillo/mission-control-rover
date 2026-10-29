@@ -126,3 +126,21 @@ def test_continuous_speech_with_short_gaps_is_not_mistaken_for_noise():
     assert len(out) == 2
     assert 14.9 < out[0].seconds <= 15.05
     assert seg.noise_floor < 100
+
+
+def fluctuating_noise(seconds, amp=400, depth=0.3, seed=3):
+    rng = random.Random(seed)
+    n = int(RATE * seconds)
+    return pcm([rng.randint(-a, a) for a in
+                (int(amp * (1 + depth * math.sin(2 * math.pi * i / RATE))) for i in range(n))])
+
+
+def test_fluctuating_noise_step_is_absorbed():
+    seg = Segmenter()
+    sig = noise(2) + fluctuating_noise(60)
+    out = [u for i in range(0, len(sig), 3200) for u in seg.feed(sig[i:i + 3200])]
+    assert len(out) <= 1
+    assert seg.noise_floor >= 150
+    sig = noise(2) + tone(1, 3000) + noise(2)
+    out = [u for i in range(0, len(sig), 3200) for u in seg.feed(sig[i:i + 3200])]
+    assert len(out) == 1
