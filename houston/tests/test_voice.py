@@ -121,3 +121,40 @@ def test_cache_key_depends_on_voice_settings(make, tmp_path, monkeypatch, knob, 
     monkeypatch.setattr(voice_mod, knob, value)
     v.cached("hola", w)  # a retuned voice must not replay the old renders
     assert len(model.calls) == 2
+
+
+class FakeKokoro:
+    """KPipeline stand-in: yields (graphemes, phonemes, audio) chunks at 24 kHz."""
+
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, text, voice, speed):
+        self.calls.append((text, voice, speed))
+        yield text, "", np.zeros(12000, dtype=np.float32)   # 0.5 s
+        yield text, "", np.zeros(12000, dtype=np.float32)   # 0.5 s
+
+
+def kokoro_voice(tmp_path):
+    pipe = FakeKokoro()
+    chatter = []
+    v = Voice("cpu", model_factory=lambda d: chatter.append(d), cache_root=tmp_path / "cache",
+              kokoro_factory=lambda: pipe)
+    return v, pipe, chatter
+
+
+def test_named_voice_uses_kokoro_not_chatterbox(tmp_path):
+    v, pipe, chatter = kokoro_voice(tmp_path)
+    raw = v.synth("Hola base.", "em_alex")
+    assert pipe.calls == [("Hola base.", "em_alex", voice_mod.KOKORO_SPEED)]
+    assert chatter == []                      # Chatterbox never loaded
+    assert abs(len(raw) - 48000 * 2) < 48000 * 2 * 0.02   # 1 s of 24 kHz → 48 kHz S16 mono
+
+
+def test_kokoro_cache_is_per_voice_name(tmp_path):
+    v, pipe, _ = kokoro_voice(tmp_path)
+    v.cached("¿Sí? Te escucho.", "em_alex")
+    v.cached("¿Sí? Te escucho.", "em_alex")
+    v.cached("¿Sí? Te escucho.", "ef_dora")
+    assert [c[1] for c in pipe.calls] == ["em_alex", "ef_dora"]
+    assert (tmp_path / "cache" / "em_alex").is_dir()

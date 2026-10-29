@@ -1,3 +1,4 @@
 chatterbox-tts==0.1.7
+kokoro==0.9.4
 setuptools<81
 pytest

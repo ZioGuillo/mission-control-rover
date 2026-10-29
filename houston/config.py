@@ -17,7 +17,7 @@ class Rover:
     app_url: str
     app_user: str
     password_file: Path
-    voice: Path
+    voice: Path | str  # a .wav sample (Chatterbox clones it) or a Kokoro voice name ("em_alex")
     # macOS Local Network privacy blocks launchd-started Python from the LAN, but not /usr/bin/ssh.
     # With a tunnel_port, install.sh runs an ssh master per rover forwarding this localhost port
     # to the rover app, and the camera goes through it.
@@ -58,7 +58,8 @@ def load(path: Path) -> Settings:
     for raw in data.get("rover", []):
         raw = dict(raw)
         raw["password_file"] = _resolve(raw["password_file"], base)
-        raw["voice"] = _resolve(raw["voice"], base)
+        if str(raw["voice"]).endswith(".wav"):
+            raw["voice"] = _resolve(raw["voice"], base)
         rovers.append(Rover(**raw))
 
     opts = dict(data.get("settings", {}))

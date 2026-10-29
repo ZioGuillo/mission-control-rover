@@ -131,6 +131,7 @@ command -v ollama >/dev/null || die "ollama not found (brew install ollama)"
 [[ -x /opt/homebrew/bin/whisper-server ]] || die "whisper-server not found (brew install whisper-cpp)"
 command -v ffmpeg >/dev/null || die "ffmpeg not found (brew install ffmpeg)"
 command -v uv >/dev/null || die "uv not found (brew install uv)"
+[[ -f /opt/homebrew/lib/libespeak-ng.dylib ]] || die "espeak-ng not found (brew install espeak-ng) — the Kokoro voice needs it"
 [[ -f "$MODEL" ]] || die "whisper model missing: $MODEL"
 
 # Ollama stays on its default, localhost only: never set OLLAMA_HOST.

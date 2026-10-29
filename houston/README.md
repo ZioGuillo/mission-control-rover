@@ -65,6 +65,12 @@ and `whisper.stderr.log` (houston's stdout is discarded; nothing prints transcri
 unreachable shows up in `houston.log` as "reconnecting in N s" with the SSH reason (host key, refused,
 no route); ssh's own messages land in `houston.stderr.log`.
 
+## Voices
+
+Each rover's `voice` in `rovers.toml` is either a **Kokoro** voice name (`em_alex`, `em_santa`, `ef_dora`:
+~20x faster than real time, Fred uses `em_alex`) or a `.wav` sample that **Chatterbox** clones (more human,
+but ~2x slower than real time, so long answers stall). Kokoro needs `brew install espeak-ng`.
+
 ## Voice commands
 
 - "Hey Fred" / "Oye Eva" plus a question: answer, then the conversation stays open for 60 s without
