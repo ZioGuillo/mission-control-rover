@@ -13,7 +13,7 @@ PI_URL      = http://$(shell echo $(PI_HOST) | cut -d@ -f2):8000
 
 SSH         = ssh -i $(SSH_KEY) $(PI_HOST)
 
-.PHONY: help connect deploy restart logs logs-tail status check test open set-password
+.PHONY: help connect deploy restart logs logs-tail status check test test-houston open set-password
 
 help:          ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -83,3 +83,6 @@ test:          ## Run the test suite locally (no hardware needed)
 
 open:          ## Open the robot web UI in your browser
 	open $(PI_URL)
+
+test-houston:  ## Run the Houston voice tests (Mac only)
+	houston/.venv/bin/python -m pytest houston/tests -v

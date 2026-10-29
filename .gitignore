@@ -56,3 +56,4 @@ __pycache__
 .worktrees
 .env
 .pytest_cache/
+houston/.venv/
