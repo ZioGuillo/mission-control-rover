@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from houston import nasa, prompts
-from houston.brain import LOOK, Brain, BrainError
+from houston.brain import LOOK, Brain, BrainError, is_demo
 from houston.camera import CameraError
 from houston.config import Settings
 from houston.tests import fakehttp
@@ -359,3 +359,48 @@ def test_talk_sheet_has_the_slide_order():
     for slide in ("slide 1 ", "slide 21 ", "slide 22 ", "slide 28 "):
         assert slide in facts
     assert "Calceta" in facts
+
+
+@pytest.mark.parametrize("question", [
+    "Bentley, dame una demo de la charla", "¿Me das un demo de mi charla?",
+    "Da la charla como si fueras yo", "Hazme la charla", "Preséntame la charla, Bentley"])
+def test_demo_requests_are_caught(question):
+    assert is_demo(ask(question))
+
+
+@pytest.mark.parametrize("question", [
+    "¿Cómo es la demo en vivo?", "¿De qué trata la charla?", "¿Qué slide va después de la demo?",
+    "Sigue", "¿Cuántas lunas tiene Marte?"])
+def test_other_questions_are_not_demos(question):
+    assert not is_demo(ask(question))
+
+
+def test_sigue_continues_the_demo_only_right_after_one():
+    demo = [{"role": "user", "content": "Dame una demo de la charla"},
+            {"role": "assistant", "content": "Buenos días a todos."}]
+    assert is_demo(demo + [{"role": "user", "content": "Sigue, Bentley"}])
+    assert is_demo(demo + [{"role": "user", "content": "Continúa"}, {"role": "assistant", "content": "…"},
+                           {"role": "user", "content": "¿Y después?"}])
+    assert not is_demo(demo + [{"role": "user", "content": "¿Cuántas lunas tiene Marte?"},
+                               {"role": "assistant", "content": "Dos."}, {"role": "user", "content": "Sigue"}])
+
+
+def test_demo_prompt_gives_the_talk_in_first_person():
+    # Live 2026-10-29: asked for a demo, Bentley commented on the talk instead of giving it.
+    facts = prompts.load_facts()
+    normal, demo = prompts.system("Bentley", facts), prompts.system("Bentley", facts, demo=True)
+    assert "dos frases" in normal and "dos frases" not in demo
+    assert "primera persona" in demo and "nunca narres" in demo and "primera persona" not in normal
+
+
+def test_demo_gets_the_demo_prompt_and_a_longer_deadline(ollama):
+    hold = threading.Event()
+    fake = ollama([say("Buenos días a todos. "), hold, say("Me llamo Pablo."), DONE])
+    brain = brain_for(fake.url)
+    brain.deadline_s, brain.demo_deadline_s = 0.3, 5.0
+    out = brain.answer(ask("Dame una demo de la charla"), "Bentley", FakeCamera())
+    assert next(out) == "Buenos días a todos."
+    time.sleep(0.5)  # past the normal deadline, still within the demo's
+    hold.set()
+    assert list(out) == ["Me llamo Pablo."]
+    assert "primera persona" in fake.bodies[0]["messages"][0]["content"]

@@ -16,21 +16,25 @@ def load_facts(path: Path | None = None) -> str:
     return "\n".join(_SOURCE.sub("", line) for line in lines if line.startswith("- "))
 
 
-def _persona(name: str, personality: str = "") -> str:
+def _persona(name: str, personality: str = "", brief: bool = True) -> str:
+    length = (
+        "máximo dos frases cortas, y la primera frase muy corta, de dos a seis palabras"
+        if brief else "frases naturales de largo variado, como se habla en un escenario"
+    )
     return (
         f"Eres {name}, un pequeño rover robótico de exploración construido por Pablo, "
         "ingeniero que trabajó en el JPL de la NASA. Hablas español latinoamericano y tuteas "
         "siempre (usa tú, nunca usted ni vos), con entusiasmo y humor ligero, como un rover que "
-        "reporta a la base. Tus respuestas se leen en voz alta: máximo dos frases cortas, y la "
-        "primera frase muy corta, de dos a seis palabras. Sin listas, sin markdown, sin emojis; "
+        "reporta a la base. Tus respuestas se leen en voz alta: "
+        f"{length}. Sin listas, sin markdown, sin emojis; "
         "escribe los números con palabras si son cortos."
         + (f" {personality}" if personality else "")
     )
 
 
-def system(name: str, facts: str, personality: str = "") -> str:
+def system(name: str, facts: str, personality: str = "", demo: bool = False) -> str:
     return (
-        _persona(name, personality) + " Te encanta hablar de Marte, la NASA, el JPL y la exploración espacial.\n\n"
+        _persona(name, personality, brief=not demo) + " Te encanta hablar de Marte, la NASA, el JPL y la exploración espacial.\n\n"
         "Hoja de datos verificada (úsala antes que tu memoria; si un dato no está aquí y no lo "
         "sabes con certeza, o es muy reciente, dilo con honestidad en vez de inventar. Si das un número "
         "que no está en la hoja ni viene de una herramienta de la NASA, dilo como aproximado o di que "
@@ -44,7 +48,25 @@ def system(name: str, facts: str, personality: str = "") -> str:
         "Tienes una cámara, pero solo sabes lo que hay frente a ti si usas la herramienta mirar. "
         "Si te preguntan qué ves, qué hay alrededor, quién está o cualquier cosa de tu entorno, "
         "llama a mirar; nunca describas tu entorno sin haberla usado."
+        + (_DEMO if demo else "")
     )
+
+
+# Live 2026-10-29: asked for a demo, Bentley narrated it ("en la slide 2 Pablo cuenta...").
+_DEMO = (
+    "\n\nAhora Pablo te pidió una demo de su charla: dala tú, como si fueras Pablo en el escenario "
+    "de CITIC frente al público. Habla en primera persona (\"me llamo Pablo\", \"mi robot\") y "
+    "dirígete al público de ustedes, con naturalidad, emoción y pausas, contando las historias. "
+    "Di solo lo que Pablo diría en voz alta: nunca narres ni comentes la charla, nunca digas "
+    "\"en la slide\", \"Pablo cuenta\" ni \"luego habla de\", y no nombres números de slide. "
+    "Tampoco describas la pantalla (\"aquí ven una foto\", \"la animación muestra\"): di lo que Pablo "
+    "dice mientras se ve. Usa solo los datos y las historias de la hoja, en el orden de las slides, "
+    "sin inventar anécdotas. Empieza por el saludo de la slide 1, o por la parte que te pidan; si te "
+    "dicen que sigas, empieza en la slide que viene después de la última que ya dijiste, sin repetir "
+    "nada. Da un solo acto por vez (acto uno: slides 1 a 4; dos: 5 a 14; tres: 15 a 20; cuatro: 21; "
+    "cinco: 22 a 28), con dos o tres frases por slide, y al final del acto para sin despedirte: no digas \"eso es "
+    "todo\" ni \"gracias por su atención\" hasta el final real de la charla, y no preguntes si sigues."
+)
 
 
 def vision(name: str, personality: str = "") -> str:

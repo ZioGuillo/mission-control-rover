@@ -58,6 +58,24 @@ _NASA_TOOLS = {"estado_rover", "foto_del_dia"}
 class BrainError(Exception):
     pass
 
+# "Dame una demo de la charla", "da la charla como si fueras yo": Bentley gives it, in Pablo's voice.
+DEMO = re.compile(
+    r"\b(demo\w*\b.*\bcharla|charla\b.*\bdemo|(da|dame|haz|hazme|presenta|pres[eé]ntame)\s+(la|mi|tu)\s+charla|"
+    r"como si (la )?(dieras|fueras yo|estuvieras en el escenario))", re.I)
+# "Sigue", "continúa", "¿y después?": go on with the demo, only right after one.
+GO_ON = re.compile(r"^\W*(\w+,?\s+)?(sigue|contin[uú]a|dale|y (despu[eé]s|luego)|lo que sigue)\b", re.I)
+
+
+def is_demo(history: list[dict]) -> bool:
+    """The last question asks for the talk demo, or says "sigue" right after one."""
+    questions = [m["content"] for m in history if m.get("role") == "user"]
+    for i in range(len(questions) - 1, -1, -1):
+        if DEMO.search(questions[i]):
+            return True
+        if not GO_ON.search(questions[i]):
+            return False
+    return False
+
 
 class Brain:
     FAILURE = "Base, tengo una falla en mis sistemas. Intenta de nuevo."
@@ -65,12 +83,14 @@ class Brain:
     # turned an APOD timeout into an invented "photo of 28 October 2027".
     NASA_DOWN = "No pude comunicarme con la NASA ahora mismo. Intenta en un rato."
     DEADLINE_S = 30.0  # a whole answer, first byte to last sentence
+    DEMO_DEADLINE_S = 120.0  # a talk demo is a whole act, about fifteen sentences
 
     def __init__(self, settings: Settings):
         self.settings = settings
         self.url = settings.ollama_url.rstrip("/") + "/api/chat"
         self.facts = prompts.load_facts()
         self.deadline_s = self.DEADLINE_S
+        self.demo_deadline_s = self.DEMO_DEADLINE_S
 
     def warm(self) -> None:
         """Load gpt-oss now and keep it loaded (an empty chat loads the model, generates nothing)."""
@@ -92,14 +112,14 @@ class Brain:
         worker = threading.Thread(target=self._work, args=(history, name, camera, personality, out, stop),
                                   name="houston-brain", daemon=True)
         worker.start()
-        deadline = time.monotonic() + self.deadline_s
+        deadline = time.monotonic() + (self.demo_deadline_s if is_demo(history) else self.deadline_s)
         said = False
         try:
             while True:
                 try:
                     kind, value = out.get(timeout=max(0.0, deadline - time.monotonic()))
                 except queue.Empty:
-                    log.warning("brain: answer cut at %.0f s", self.deadline_s)
+                    log.warning("brain: answer cut at the deadline")
                     if not said:
                         yield self.FAILURE
                     return
@@ -129,7 +149,7 @@ class Brain:
         if LOOK.search(question):
             yield from self._look(question, name, camera, personality, stop)
             return
-        messages = [{"role": "system", "content": prompts.system(name, self.facts, personality)}]
+        messages = [{"role": "system", "content": prompts.system(name, self.facts, personality, is_demo(history))}]
         messages += [dict(m) for m in history[-HISTORY_TURNS:]]
         think = self.settings.think
         for _ in range(MAX_TOOL_ROUNDS + 1):
