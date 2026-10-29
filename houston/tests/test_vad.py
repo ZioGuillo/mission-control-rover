@@ -117,3 +117,12 @@ def test_sustained_noise_step_is_absorbed():
 
 def test_short_pause_inside_speech_stays_one_utterance():
     assert len(run(noise(1) + tone(1) + noise(0.3) + tone(1) + noise(1))) == 1
+
+
+def test_continuous_speech_with_short_gaps_is_not_mistaken_for_noise():
+    seg = Segmenter()
+    sig = noise(2) + (tone(0.6) + noise(0.05)) * 31 + noise(1)
+    out = [u for i in range(0, len(sig), 3200) for u in seg.feed(sig[i:i + 3200])]
+    assert len(out) == 2
+    assert 14.9 < out[0].seconds <= 15.05
+    assert seg.noise_floor < 100

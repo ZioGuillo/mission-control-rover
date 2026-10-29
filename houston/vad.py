@@ -14,6 +14,7 @@ _ONSET_FRAMES = 3        # consecutive voiced frames that start an utterance
 _PREROLL_FRAMES = 10     # quiet frames kept before the onset
 _SEED_FLOOR = _MIN_THRESHOLD / _FLOOR_RATIO  # start/reset value of the noise floor
 _STUCK_RATIO = 2.0       # a max-length clip whose quiet frames beat floor*this is noise
+_FLAT_SPREAD = 0.1       # frame-RMS std/mean below this is stationary noise, not speech dips
 _TAIL_FRAMES = 7         # trailing quiet frames kept after the last speech
 
 
@@ -86,7 +87,7 @@ class Segmenter:
                 self._lead = (len(self._pre) - _ONSET_FRAMES) * self._frame_bytes
                 self._buf = bytearray(b"".join(f for f, _ in self._pre))
                 self._peak = max(r for _, r in self._pre)
-                self._rmss = [r for _, r in self._pre]
+                self._rmss = [r for _, r in list(self._pre)[-_ONSET_FRAMES:]]
             return None
 
         n = self._frame_bytes
@@ -96,9 +97,14 @@ class Segmenter:
         self._quiet = self._quiet + 1 if e < thr else 0
         cut = len(self._buf) >= self._max_bytes
         if cut and self._quiet < self._end_frames:
-            quiet_level = sorted(self._rmss)[len(self._rmss) // 5]
-            if quiet_level > self._floor * _STUCK_RATIO:
-                # even its quietest frames are loud: the noise rose, not speech
+            ranked = sorted(self._rmss)
+            quiet_level = ranked[len(ranked) // 5]
+            loud_level = ranked[len(ranked) * 9 // 10]
+            mean = sum(ranked) / len(ranked)
+            spread = math.sqrt(sum((r - mean) ** 2 for r in ranked) / len(ranked)) / mean
+            if (quiet_level > self._floor * _STUCK_RATIO and loud_level < quiet_level * _STUCK_RATIO
+                    and spread < _FLAT_SPREAD):
+                # even its quietest frames are loud and the energy is flat: noise rose, not speech
                 self._floor = quiet_level
                 self._speaking, self._voiced, self._buf = False, 0, bytearray()
                 self._pre.clear()
