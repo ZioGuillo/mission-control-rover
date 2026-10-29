@@ -71,6 +71,11 @@ Each rover's `voice` in `rovers.toml` is either a **Kokoro** voice name (`em_ale
 ~20x faster than real time, Fred uses `em_alex`) or a `.wav` sample that **Chatterbox** clones (more human,
 but ~2x slower than real time, so long answers stall). Kokoro needs `brew install espeak-ng`.
 
+**Filler sound:** a rover can set `filler_sound` (a mono WAV under `houston/`) to play it instead of
+the second "please wait" line. Bentley's `audio/barks_soft.wav` is two barks cut from
+["Barking of a dog"](https://commons.wikimedia.org/wiki/File:Barking_of_a_dog.ogg) by Amada44,
+CC BY-SA 3.0 (trimmed and made quieter); the derived file is under the same licence.
+
 ## Voice commands
 
 - "Hey Fred" / "Oye Eva" plus a question: answer, then the conversation stays open for 60 s without

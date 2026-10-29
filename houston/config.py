@@ -24,6 +24,8 @@ class Rover:
     tunnel_port: int | None = None
     # Extra character for this rover, added to its prompts (e.g. Bentley = Pablo's Shiba Inu).
     personality: str = ""
+    # Optional sound played instead of the second filler line (Bentley: two soft barks).
+    filler_sound: Path | None = None
 
     @property
     def camera_url(self) -> str:
@@ -62,6 +64,8 @@ def load(path: Path) -> Settings:
         raw["password_file"] = _resolve(raw["password_file"], base)
         if str(raw["voice"]).endswith(".wav"):
             raw["voice"] = _resolve(raw["voice"], base)
+        if raw.get("filler_sound"):
+            raw["filler_sound"] = _resolve(raw["filler_sound"], base)
         rovers.append(Rover(**raw))
 
     opts = dict(data.get("settings", {}))

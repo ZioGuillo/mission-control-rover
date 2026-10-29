@@ -12,6 +12,7 @@ import queue
 import re
 import threading
 import time
+from pathlib import Path
 from typing import Callable
 
 from houston import voice as voice_mod
@@ -85,7 +86,8 @@ class RoverSession:
                  transcriber: Transcriber, clock: Callable[[], float] = time.monotonic, *,
                  link=None, camera=None, beep: Callable[[str], bytes] = voice_mod.beep,
                  sleep: Callable[[float], object] | None = None,
-                 airtime: Airtime | None = None) -> None:
+                 airtime: Airtime | None = None,
+                 load_sound: Callable[[Path], bytes] = voice_mod.sound) -> None:
         self.rover, self.settings = rover, settings
         self.brain, self.voice, self.transcriber, self.clock = brain, voice, transcriber, clock
         self.link = link or RoverLink(rover.ssh)
@@ -103,7 +105,11 @@ class RoverSession:
         self._muted = False  # frames were dropped: reset the segmenter before the next one
         self._got_audio = False  # this connection delivered mic data (resets the backoff)
         self._fixed: dict[str, bytes] = {}
-        self._fillers = itertools.cycle(FILLERS)
+        self._load_sound = load_sound
+        self._sounds: dict[Path, bytes] = {}
+        # A rover with its own filler sound plays it instead of the second filler line.
+        self._fillers = itertools.cycle(
+            (FILLERS[0], rover.filler_sound) if rover.filler_sound else FILLERS)
         self._cancel = threading.Event()
         self._others = [r.name for r in settings.rovers if r.name.lower() != rover.name.lower()]
 
@@ -199,11 +205,23 @@ class RoverSession:
                 self._phrase(phrase)
             except Exception as e:
                 log.error("%s: cannot pre-render %r: %s", self.name, phrase, e)
+        if self.rover.filler_sound:
+            try:
+                self._filler(self.rover.filler_sound)
+            except Exception as e:
+                log.error("%s: cannot load filler sound: %s", self.name, e)
         for b in ("in", "out"):
             try:
                 self._beep(b)
             except Exception as e:
                 log.error("%s: cannot load beep %s: %s", self.name, b, e)
+
+    def _filler(self, item: str | Path) -> bytes:
+        if isinstance(item, Path):
+            if item not in self._sounds:
+                self._sounds[item] = self._load_sound(item)
+            return self._sounds[item]
+        return self._phrase(item)
 
     def _phrase(self, text: str) -> bytes:
         pcm = self._fixed.get(text)
@@ -275,7 +293,7 @@ class RoverSession:
             item = audio.get(timeout=self.filler_after)
         except queue.Empty:
             try:
-                pb.put(self._phrase(next(self._fillers)))
+                pb.put(self._filler(next(self._fillers)))
             except Exception as e:
                 log.error("%s: cannot render filler: %s", self.name, e)
             item = self._next(audio, pb)

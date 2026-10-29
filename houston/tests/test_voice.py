@@ -158,3 +158,14 @@ def test_kokoro_cache_is_per_voice_name(tmp_path):
     v.cached("¿Sí? Te escucho.", "ef_dora")
     assert [c[1] for c in pipe.calls] == ["em_alex", "ef_dora"]
     assert (tmp_path / "cache" / "em_alex").is_dir()
+
+
+def test_sound_file_becomes_48k_raw_and_is_cached(tmp_path):
+    import wave
+    p = tmp_path / "barks.wav"
+    with wave.open(str(p), "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(24000)
+        w.writeframes(b"\x00\x01" * 24000)  # 1 s at 24 kHz
+    raw = voice_mod.sound(p)
+    assert abs(len(raw) - 96000) < 96000 * 0.02
+    assert voice_mod.sound(p) is raw

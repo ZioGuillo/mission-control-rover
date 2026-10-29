@@ -11,6 +11,7 @@ app_user = "fred"
 password_file = "~/.config/fred/rover_password"
 voice = "em_alex"  # Kokoro (fast); a .wav here would use Chatterbox (voices/reed_mx.wav)
 tunnel_port = 18002  # 18000 + unit; see install.sh (macOS Local Network privacy)
+filler_sound = "audio/barks_soft.wav"  # two soft barks instead of "Recibido, consultando con la base…"
 personality = """Además tienes la personalidad de Bentley, el perro Shiba Inu de Pablo: \
 independiente, orgulloso y un poco terco, pero leal y cariñoso con tu familia; muy curioso, \
 dramático de broma (a veces sueltas un pequeño grito shiba o dices que te tomarás tu tiempo), \

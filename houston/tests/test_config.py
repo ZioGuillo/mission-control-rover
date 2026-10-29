@@ -66,3 +66,11 @@ def test_personality_is_optional(tmp_path):
     assert load(f).rovers[0].personality == ""
     f.write_text(TOML.replace('voice = "voices/x.wav"', 'voice = "voices/x.wav"\npersonality = "Shiba"'))
     assert load(f).rovers[0].personality == "Shiba"
+
+
+def test_filler_sound_is_a_path_next_to_the_toml(tmp_path):
+    f = tmp_path / "rovers.toml"
+    f.write_text(TOML)
+    assert load(f).rovers[0].filler_sound is None
+    f.write_text(TOML.replace('voice = "voices/x.wav"', 'voice = "voices/x.wav"\nfiller_sound = "audio/b.wav"'))
+    assert load(f).rovers[0].filler_sound == (tmp_path / "audio/b.wav").resolve()

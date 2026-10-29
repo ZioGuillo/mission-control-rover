@@ -852,3 +852,29 @@ def test_session_passes_the_rover_personality_to_the_brain():
                      link=FakeLink(), camera=object(), beep=fake_beep)
     s.handle(utter("Hey Bentley, ¿qué tal?"))
     assert brain.personalities == ["Eres un Shiba Inu."]
+
+
+def test_filler_sound_replaces_the_second_filler():
+    # Bentley (a Shiba Inu) barks softly instead of saying "Recibido, consultando con la base…".
+    filler_played = threading.Event()
+
+    def on_write(pcm):
+        if b"<barks>" in pcm or any(f.encode() in pcm for f in FILLERS):
+            filler_played.set()
+
+    def slow():
+        assert filler_played.wait(5)
+        filler_played.clear()
+
+    barks = Path("/audio/barks_soft.wav")
+    r = dataclasses.replace(rover("Bentley"), filler_sound=barks)
+    loaded = []
+    s = RoverSession(r, Settings(rovers=[r]), FakeBrain(["Uno."], ["Dos."], before=slow), FakeVoice(),
+                     FakeTranscriber(), Clock(), link=FakeLink(on_write=on_write), camera=object(),
+                     beep=fake_beep, load_sound=lambda p: loaded.append(p) or b"<barks>")
+    s.filler_after = 0.05
+    s.handle(utter("Bentley, ¿qué es Marte?"))
+    s.handle(utter("¿y la Luna?"))
+    assert s.link.speakers[0].tags() == ["<beep in>", "[Mmm, déjame ver…]", "[Uno.]", "<beep out>"]
+    assert s.link.speakers[1].tags() == ["<beep in>", "<barks>", "[Dos.]", "<beep out>"]
+    assert loaded == [barks]  # loaded once, then served from memory

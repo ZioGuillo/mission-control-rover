@@ -126,11 +126,16 @@ class Voice:
         return raw
 
 
-def beep(name: Literal["in", "out"]) -> bytes:
-    if name not in _beeps:
-        path = AUDIO_DIR / f"quindar_{name}.wav"
-        with wave.open(str(path)) as w:
+def sound(path: Path) -> bytes:
+    """A mono 16-bit WAV as 48 kHz raw PCM, cached in memory."""
+    key = str(path)
+    if key not in _beeps:
+        with wave.open(key) as w:
             rate, pcm = w.getframerate(), w.readframes(w.getnframes())
-        _beeps[name] = _ffmpeg(["-f", "s16le", "-ar", str(rate), "-ac", "1", "-i", "-",
-                                "-ar", str(OUT_RATE), "-f", "s16le", "-"], pcm)
-    return _beeps[name]
+        _beeps[key] = _ffmpeg(["-f", "s16le", "-ar", str(rate), "-ac", "1", "-i", "-",
+                               "-ar", str(OUT_RATE), "-f", "s16le", "-"], pcm)
+    return _beeps[key]
+
+
+def beep(name: Literal["in", "out"]) -> bytes:
+    return sound(AUDIO_DIR / f"quindar_{name}.wav")
