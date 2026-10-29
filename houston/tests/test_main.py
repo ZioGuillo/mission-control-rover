@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from houston import __main__ as hmain
+from houston.session import Airtime
 
 TOML = """
 [[rover]]
@@ -52,14 +53,23 @@ def env(tmp_path, monkeypatch):
             return b""
 
     class FakeBrain:
+        warm_error = None
+
         def __init__(self, settings):
             self.settings = settings
+            self.warmed = threading.Event()
+
+        def warm(self):
+            self.warmed.set()
+            if self.warm_error:
+                raise self.warm_error
 
     class FakeSession:
         crash_first = set()
 
-        def __init__(self, rover, settings, brain, voice, transcriber):
+        def __init__(self, rover, settings, brain, voice, transcriber, *, airtime):
             self.rover, self.brain, self.voice = rover, brain, voice
+            self.airtime = airtime
             self.transcriber = transcriber
             self.stopped = threading.Event()
             self.started = threading.Event()
@@ -97,6 +107,7 @@ def test_one_session_per_rover_with_shared_voice_and_brain(env):
     assert {s.rover.name for s in made} == {"Fred", "Eva"}
     assert made[0].voice is made[1].voice and made[0].brain is made[1].brain
     assert made[0].transcriber is not None
+    assert isinstance(made[0].airtime, Airtime) and made[0].airtime is made[1].airtime
     stop.set()
     t.join(5)
     assert not t.is_alive() and result == [0]
@@ -143,11 +154,36 @@ def test_stop_during_restart_wait_exits_promptly(env):
     assert len([s for s in made if s.rover.name == "Fred"]) == 1
 
 
-def test_no_rovers_is_an_error(env, tmp_path):
+def test_no_rovers_logs_error_and_exits_cleanly(env, tmp_path):
     cfg, _, _, log = env
     empty = tmp_path / "empty.toml"
     empty.write_text("[settings]\n")
-    assert hmain.main(["--config", str(empty), "--log-file", str(log)], stop=threading.Event()) == 2
+    # exit 0: launchd (KeepAlive SuccessfulExit=false) must not restart it every 10 s
+    assert hmain.main(["--config", str(empty), "--log-file", str(log)], stop=threading.Event()) == 0
+    assert "no rovers" in log.read_text()
+
+
+def test_llm_warmed_up_in_background(env):
+    cfg, made, _, log = env
+    stop = threading.Event()
+    t, _ = run_main(cfg, log, stop)
+    assert wait_for(lambda: len(made) == 2)
+    assert made[0].brain.warmed.wait(3)
+    stop.set()
+    t.join(5)
+
+
+def test_llm_warm_up_failure_is_logged_not_fatal(env):
+    cfg, made, _, log = env
+    hmain.Brain.warm_error = RuntimeError("ollama down")
+    stop = threading.Event()
+    t, _ = run_main(cfg, log, stop)
+    assert wait_for(lambda: len(made) == 2 and made[0].brain.warmed.is_set())
+    assert wait_for(lambda: "ollama down" in log.read_text())
+    assert all(not s.stopped.is_set() for s in made)  # sessions keep running
+    stop.set()
+    t.join(5)
+    assert not t.is_alive()
 
 
 def test_startup_failure_is_logged_and_returns_1(env, monkeypatch):

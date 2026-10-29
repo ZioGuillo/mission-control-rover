@@ -12,7 +12,7 @@ from pathlib import Path
 
 from houston import config
 from houston.brain import Brain
-from houston.session import RoverSession
+from houston.session import Airtime, RoverSession
 from houston.stt import Transcriber
 from houston.voice import Voice
 
@@ -36,13 +36,18 @@ def _setup_logging(path: Path) -> RotatingFileHandler:
     return handler
 
 
-def _preload(voice: Voice, wav: Path) -> None:
-    """Load the TTS model now (first synth costs ~50 s); sessions listen meanwhile."""
+def _preload(voice: Voice, wav: Path, brain: Brain) -> None:
+    """Load the TTS model (first synth costs ~50 s) and gpt-oss now; sessions listen meanwhile."""
     try:
         voice.synth("Hola.", wav)
         log.info("voice model ready")
     except Exception:
         log.exception("voice preload failed")
+    try:
+        brain.warm()
+        log.info("llm ready")
+    except Exception as e:
+        log.error("llm warm-up failed: %s", e)
 
 
 def _supervise(rover, make_session, sessions: dict, stop: threading.Event, delay: float) -> None:
@@ -79,8 +84,8 @@ def main(argv: list[str] | None = None, *, stop: threading.Event | None = None,
             log.exception("cannot load %s", args.config)
             return 1
         if not settings.rovers:
-            log.error("no rovers in %s", args.config)
-            return 2
+            log.error("no rovers in %s: nothing to do", args.config)
+            return 0  # a clean exit: launchd must not restart this every 10 s
         if own_signals:
             for sig in (signal.SIGTERM, signal.SIGINT):
                 signal.signal(sig, lambda *_: stop.set())
@@ -92,11 +97,12 @@ def main(argv: list[str] | None = None, *, stop: threading.Event | None = None,
         except Exception:
             log.exception("startup failed")
             return 1
-        threading.Thread(target=_preload, args=(voice, settings.rovers[0].voice),
+        threading.Thread(target=_preload, args=(voice, settings.rovers[0].voice, brain),
                          name="houston-preload", daemon=True).start()
+        airtime = Airtime()  # one for the whole room: no rover listens while another speaks
 
         def make_session(rover):
-            return RoverSession(rover, settings, brain, voice, transcriber)
+            return RoverSession(rover, settings, brain, voice, transcriber, airtime=airtime)
 
         sessions: dict[str, RoverSession] = {}
         threads = [threading.Thread(target=_supervise,

@@ -9,6 +9,7 @@ import itertools
 import logging
 import math
 import queue
+import re
 import threading
 import time
 from typing import Callable
@@ -32,6 +33,8 @@ HISTORY_MESSAGES = 8
 FILLER_AFTER_S = 1.2       # no answer audio this long after the beep -> play a filler
 MUTE_MARGIN_S = 0.5        # keep the mic deaf this long after the rover goes quiet
 MIN_QUESTION_CHARS = 3     # "Hey Fred" plus less than this is just a wake
+MIN_FOLLOW_UP_WORDS = 2    # in a conversation, "Mmm." / "¿Qué?" is room noise, not a question
+PAUSED_MAX_S = 2.5         # while resting, only utterances this short go to Whisper ("Fred, despierta")
 BACKOFF_START_S, BACKOFF_MAX_S = 2.0, 30.0
 MIC_CHUNK = 3200           # 0.1 s of 16 kHz S16_LE
 _POLL_S = 0.1
@@ -52,11 +55,36 @@ def _ms(seconds: float) -> int:
     return round(seconds * 1000)
 
 
+class Airtime:
+    """When any rover is talking, shared by all sessions in the process: every mic is deaf while
+    any rover speaks (and MUTE_MARGIN_S after), so two rovers in one room never answer each other."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._speaking = 0
+        self._until = -math.inf
+
+    def start(self) -> None:
+        with self._lock:
+            self._speaking += 1
+
+    def stop(self, quiet_at: float) -> None:
+        """One speaker went quiet at clock `quiet_at`: stay deaf until then plus the margin."""
+        with self._lock:
+            self._speaking = max(0, self._speaking - 1)
+            self._until = max(self._until, quiet_at + MUTE_MARGIN_S)
+
+    def busy(self, t: float) -> bool:
+        with self._lock:
+            return self._speaking > 0 or t < self._until
+
+
 class RoverSession:
     def __init__(self, rover: Rover, settings: Settings, brain: Brain, voice: Voice,
                  transcriber: Transcriber, clock: Callable[[], float] = time.monotonic, *,
                  link=None, camera=None, beep: Callable[[str], bytes] = voice_mod.beep,
-                 sleep: Callable[[float], object] | None = None) -> None:
+                 sleep: Callable[[float], object] | None = None,
+                 airtime: Airtime | None = None) -> None:
         self.rover, self.settings = rover, settings
         self.brain, self.voice, self.transcriber, self.clock = brain, voice, transcriber, clock
         self.link = link or RoverLink(rover.ssh)
@@ -70,7 +98,7 @@ class RoverSession:
         self.history: list[dict] = []
         self._state = WAITING
         self._last_turn = 0.0
-        self._mute_until = -math.inf
+        self.airtime = airtime or Airtime()  # __main__ shares one across all rovers
         self._muted = False  # frames were dropped: reset the segmenter before the next one
         self._got_audio = False  # this connection delivered mic data (resets the backoff)
         self._fixed: dict[str, bytes] = {}
@@ -117,6 +145,8 @@ class RoverSession:
 
         Logged: the command kind, or the question after the wake. Never the full transcript:
         whatever was said before "Hey Fred" in the same breath is room talk."""
+        if self.state == PAUSED and u.seconds > PAUSED_MAX_S:
+            return  # resting: room talk never reaches Whisper, only short "Fred, despierta"
         t0 = self.clock()
         text = self.transcriber.transcribe(u.pcm)
         stt = self.clock() - t0
@@ -145,15 +175,16 @@ class RoverSession:
                 self._say(SAY_GOODBYE)
             return
         if heard.kind == "wake":
-            log.info("%s wake: %s", self.name, heard.rest or "(sin pregunta)")
             if len(heard.rest) < MIN_QUESTION_CHARS:
+                log.info("%s wake: (sin pregunta)", self.name)  # a question is logged by _answer
                 self._state = CONVERSATION
                 self._say(SAY_LISTENING)
                 self._last_turn = self.clock()
                 return
             self._answer(heard.rest, t0, stt)
             return
-        if state == CONVERSATION and not self._for_another_rover(text):
+        if (state == CONVERSATION and len(re.findall(r"\w+", text)) >= MIN_FOLLOW_UP_WORDS
+                and not self._for_another_rover(text)):
             self._answer(text, t0, stt)
 
     # ------------------------------------------------------------------ speaking
@@ -185,9 +216,12 @@ class RoverSession:
         self._end_conversation()
 
     def _open(self, prelude: bytes = b"") -> Playback | None:
+        """Every opened Playback must go through _finish (it releases the shared airtime)."""
+        self.airtime.start()
         try:
             return Playback(self.link.speaker(prelude=prelude), self.clock, len(prelude))
         except LinkError as e:
+            self.airtime.stop(self.clock())
             self._lost(e)
             return None
 
@@ -196,10 +230,10 @@ class RoverSession:
         try:
             end = pb.finish()
         except LinkError as e:
-            self._mute_until = pb.end + MUTE_MARGIN_S
+            self.airtime.stop(pb.end)
             self._lost(e)
             return None
-        self._mute_until = end + MUTE_MARGIN_S
+        self.airtime.stop(end)
         return end
 
     def _say(self, phrase: str) -> None:
@@ -248,7 +282,10 @@ class RoverSession:
             pb.put(item, answer=True)
             item = self._next(audio, pb)
         if item is _END:
-            pb.put(self._beep("out"))
+            try:
+                pb.put(self._beep("out"))
+            except Exception as e:
+                log.error("%s: cannot load beep out: %s", self.name, e)
         else:
             cancel.set()  # link lost or stopping: stop thinking and synthesising
         end = self._finish(pb)
@@ -310,9 +347,9 @@ class RoverSession:
     # ------------------------------------------------------------------ listening
 
     def feed(self, chunk: bytes, t: float | None = None) -> None:
-        """Mic PCM that arrived at clock time `t`; frames heard while the rover speaks are dropped."""
+        """Mic PCM that arrived at clock time `t`; frames heard while any rover speaks are dropped."""
         t = self.clock() if t is None else t
-        if t < self._mute_until:
+        if self.airtime.busy(t):
             self._muted = True
             return
         if self._muted:
@@ -320,7 +357,7 @@ class RoverSession:
             self._muted = False
         for u in self.segmenter.feed(chunk):
             self.handle(u)
-            if self._mute_until > t:  # it spoke: the rest of this chunk overlapped it
+            if self.airtime.busy(t):  # a rover spoke: the rest of this chunk overlapped it
                 self._muted = True
                 return
 
