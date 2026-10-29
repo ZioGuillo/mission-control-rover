@@ -86,6 +86,29 @@ def test_noise_floor_property_and_reset():
     assert seg.noise_floor == 50.0
 
 
+def test_reset_keep_floor_keeps_learned_floor_but_drops_partial_speech():
+    seg = Segmenter()
+    seg.feed(noise(5))
+    floor = seg.noise_floor
+    seg.feed(tone(0.6))  # mid-utterance
+    seg.reset(keep_floor=True)
+    assert seg.noise_floor == floor
+    assert seg.feed(noise(1)) == []  # the half-heard tone is gone
+
+
+def test_noisy_room_floor_survives_keep_floor_reset():
+    # RMS ~300 swelling noise (TV, fan + traffic): over the seed threshold, too uneven to be "flat"
+    seg = Segmenter()
+    sig = fluctuating_noise(40, amp=520)
+    assert len([u for i in range(0, len(sig), 3200) for u in seg.feed(sig[i:i + 3200])]) <= 1
+    assert seg.noise_floor > 200
+    for keep, expected in ((True, 0), (False, 1)):
+        seg.reset(keep_floor=keep)
+        sig = fluctuating_noise(20, amp=520, seed=4)
+        out = [u for i in range(0, len(sig), 3200) for u in seg.feed(sig[i:i + 3200])]
+        assert len(out) == expected  # a full reset relearns by emitting 15 s of noise
+
+
 def test_floor_frozen_while_speaking():
     seg = Segmenter()
     seg.feed(noise(3))

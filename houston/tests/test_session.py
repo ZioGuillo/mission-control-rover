@@ -12,7 +12,7 @@ from houston.config import Rover, Settings
 from houston.rover_link import LinkError
 from houston.session import CLOSE_MIN_RMS, FILLERS, RoverSession
 from houston.stt import SttError
-from houston.tests.test_vad import noise, tone
+from houston.tests.test_vad import fluctuating_noise, noise, tone
 from houston.vad import Utterance
 
 FRED_WAV = Path("/voices/reed_mx.wav")
@@ -34,8 +34,9 @@ class Clock:
 
 
 class FakeSpeaker:
-    def __init__(self, fail_on_write=None, on_write=None):
-        self.writes: list[bytes] = []
+    def __init__(self, fail_on_write=None, on_write=None, prelude=b""):
+        self.prelude = prelude
+        self.writes: list[bytes] = [prelude] if prelude else []
         self.closed = False
         self._fail_on_write = fail_on_write
         self._on_write = on_write
@@ -112,10 +113,10 @@ class FakeLink:
         self.procs.append(m)
         return m
 
-    def speaker(self):
+    def speaker(self, prelude=b""):
         if self.speaker_error:
             raise self.speaker_error
-        s = FakeSpeaker(self._fail, self._on_write)
+        s = FakeSpeaker(self._fail, self._on_write, prelude)
         self.speakers.append(s)
         return s
 
@@ -188,7 +189,8 @@ def rover(name="Fred", wav=FRED_WAV):
 
 def make(name="Fred", brain=None, clock=None, link=None, transcriber=None, voice=None, sleep=None):
     clock = clock or Clock()
-    s = RoverSession(rover(name, FRED_WAV if name == "Fred" else EVA_WAV), Settings(rovers=[]),
+    rovers = [rover("Fred", FRED_WAV), rover("Eva", EVA_WAV)]
+    s = RoverSession(rover(name, FRED_WAV if name == "Fred" else EVA_WAV), Settings(rovers=rovers),
                      brain or FakeBrain(), voice or FakeVoice(), transcriber or FakeTranscriber(),
                      clock, link=link or FakeLink(), camera=object(), beep=fake_beep, sleep=sleep)
     return s
@@ -216,6 +218,7 @@ def test_wake_with_question_answers_between_beeps():
     assert s.link.played() == ["<beep in>", "[Son 687 días.]", "[Casi dos años.]", "<beep out>"]
     assert s.link.speakers[0].closed
     assert len(s.link.speakers) == 1  # one Speaker per answer
+    assert s.link.speakers[0].prelude == b"<beep in>"  # written as aplay starts, before its busy check
     assert s.state == "conversation"
     assert brain.calls[0] == ([{"role": "user", "content": "cuántos días tiene un año en Marte"}], "Fred")
 
@@ -514,7 +517,7 @@ def test_unaddressed_speech_is_never_logged(caplog):
     text = "\n".join(r.getMessage() for r in caplog.records)
     for secret in ("súper", "cumpleaños", "contraseña", "cena"):
         assert secret not in text
-    assert "¿cuántos días tiene un año en Marte" in text  # questions are logged
+    assert "cuántos días tiene un año en Marte" in text  # questions are logged
     assert "Son 687 días." in text  # and answers
 
 
@@ -639,3 +642,92 @@ def test_stop_ends_backoff_wait():
     s.stop()
     t.join(1)
     assert not t.is_alive()
+
+
+# ---------------------------------------------------------------- fix round 1
+
+def test_speech_before_the_wake_is_not_logged(caplog):
+    caplog.set_level(logging.DEBUG)
+    s = make(brain=FakeBrain(["Son las tres."]))
+    s.handle(utter("bla bla la clave es 123. Hey Fred, ¿qué hora es?"))
+    s.handle(utter("Gracias.", rms=3000))
+    s.handle(utter("la tarjeta termina en 4455. Hey Fred."))
+    text = "\n".join(r.getMessage() for r in caplog.records)
+    assert "123" not in text and "clave" not in text and "4455" not in text
+    assert "qué hora es" in text
+    assert len(s.brain.calls) == 1 and s.brain.calls[0][0][-1]["content"] == "qué hora es"
+
+
+def test_conversation_ignores_questions_for_another_rover(caplog):
+    caplog.set_level(logging.DEBUG)
+    clock = Clock()
+    fred = make("Fred", clock=clock, brain=FakeBrain(["Son 687 días."], ["Casi 12 años."]))
+    eva = make("Eva", clock=clock, brain=FakeBrain(["Soy Eva."]))
+    for u in (utter("Hey Fred, ¿cuántos días tiene un año en Marte?"), utter("Hey Eva, ¿quién eres?"),
+              utter("Eva, descansa"), utter("Gracias, Eva"), utter("¿y en Júpiter?")):
+        fred.handle(u)
+        eva.handle(u)
+    assert [c[0][-1]["content"] for c in fred.brain.calls] == [
+        "cuántos días tiene un año en Marte", "¿y en Júpiter?"]
+    assert fred.state == "conversation"
+    assert len(eva.brain.calls) == 1 and eva.state == "paused"  # Eva acted on her own name only
+    fred_logs = "\n".join(r.getMessage() for r in caplog.records if r.getMessage().startswith("Fred"))
+    assert "quién eres" not in fred_logs
+
+
+@pytest.mark.parametrize("text", ["Oye Fred, descansa.", "Hey Fred descansa"])
+def test_wake_plus_pause_is_pause(text):
+    s = make()
+    s.handle(utter(text))
+    assert s.state == "paused"
+    assert s.brain.calls == []
+    s.handle(utter("Oye Fred, despierta."))
+    assert s.state == "waiting"
+    assert s.link.played() == ["[Entendido, descansando.]", "[¡Aquí estoy!]"]
+
+
+def test_wake_plus_thanks_closes_only_in_conversation_and_loud():
+    s = make(brain=FakeBrain(["Son 687 días."]))
+    s.handle(utter("Hey Fred, gracias.", rms=3000))  # waiting: nothing to close, not a question
+    assert s.link.played() == [] and s.brain.calls == []
+    s.handle(utter("Hey Fred, ¿cuántos días tiene un año en Marte?"))
+    s.handle(utter("Hey Fred, gracias.", rms=200))
+    assert s.state == "conversation" and len(s.brain.calls) == 1
+    s.handle(utter("Hey Fred, gracias, Fred.", rms=3000))
+    assert s.state == "waiting"
+    assert s.link.played()[-1] == "[¡De nada! Cambio y fuera.]"
+
+
+def test_wake_plus_thanks_inside_a_question_is_a_question():
+    s = make(brain=FakeBrain(["Casi 12 años."]))
+    s.handle(utter("Hey Fred, gracias, ¿y en Júpiter?", rms=3000))
+    assert len(s.brain.calls) == 1
+
+
+def test_noisy_room_no_garbage_utterance_after_answer():
+    clock = Clock()
+    tr = FakeTranscriber()  # default "": whatever the VAD hands over while learning is ignored
+    s = make(clock=clock, transcriber=tr, brain=FakeBrain(["Un planeta."]))
+    s.feed(fluctuating_noise(40, amp=520))  # RMS ~300: the VAD learns the room
+    learned = tr.calls
+    tr.default = "Hey Fred, ¿qué es Marte?"
+    s.feed(tone(1.0) + fluctuating_noise(1.0, amp=520, seed=5))
+    assert tr.calls == learned + 1 and len(s.brain.calls) == 1
+    clock.advance(5)  # Fred is quiet again; the room is still noisy
+    tr.default = "garbage"
+    sig = fluctuating_noise(20, amp=520, seed=6)
+    for i in range(0, len(sig), 3200):
+        s.feed(sig[i:i + 3200])
+    assert tr.calls == learned + 1
+
+
+def test_cancelled_answer_does_not_synthesise():
+    s = make(link=FakeLink(speaker_fail_on_write=1))
+
+    def wait_for_cancel():
+        assert s._cancel.wait(2)  # speaker broke while the brain was still thinking
+    s.brain = FakeBrain(["Uno.", "Dos."], before=wait_for_cancel)
+    s.filler_after = 0.01
+    s.handle(utter("Hey Fred, cuenta hasta dos"))
+    assert s.connected is False
+    assert s.voice.synth_calls == []

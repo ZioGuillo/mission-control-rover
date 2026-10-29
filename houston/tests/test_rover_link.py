@@ -231,3 +231,30 @@ def test_stop_mic_kills_and_reaps():
     p.stdout = SimpleNamespace(close=lambda: None)
     stop_mic(p)
     assert p.killed and p.waited is not None
+
+
+def test_speaker_prelude_written_before_busy_check_and_resent_on_retry():
+    busy = FakeProc(1, b"aplay: main:831: audio open error: Device or resource busy\n")
+    dead_pipe = FakeProc(1, b"Device or resource busy", fail=True)  # write fails: still retried
+    good = FakeProc()
+    polls_at_write = []
+    orig = good.stdin.write
+    good.stdin.write = lambda b: (polls_at_write.append(good.polls), orig(b))
+    spk = Speaker(iter([busy, dead_pipe, good]).__next__, sleep=lambda s: None, prelude=b"BEEP")
+    spk.write(b"abc")
+    assert busy.stdin.data == b"BEEP"
+    assert good.stdin.data == b"BEEPabc"
+    assert polls_at_write[0] == 0  # the beep went out before the 0.3 s start check
+
+
+def test_link_speaker_passes_prelude():
+    link, _, started = _link_with([0])
+    procs = []
+
+    def popen(c, **kw):
+        started.append(c)
+        procs.append(FakeProc())
+        return procs[-1]
+    link._popen = popen
+    link.speaker(prelude=b"BEEP")
+    assert procs[0].stdin.data == b"BEEP"

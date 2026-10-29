@@ -17,7 +17,7 @@ from houston import voice as voice_mod
 from houston.brain import Brain
 from houston.camera import AppCamera
 from houston.config import Rover, Settings
-from houston.phrases import classify, is_phantom
+from houston.phrases import Heard, classify, is_phantom
 from houston.playback import Playback
 from houston.rover_link import LinkError, RoverLink, stop_mic
 from houston.stt import SttError, Transcriber
@@ -76,6 +76,7 @@ class RoverSession:
         self._fixed: dict[str, bytes] = {}
         self._fillers = itertools.cycle(FILLERS)
         self._cancel = threading.Event()
+        self._others = [r.name for r in settings.rovers if r.name.lower() != rover.name.lower()]
 
     # ------------------------------------------------------------------ state
 
@@ -99,24 +100,39 @@ class RoverSession:
     def _loud_enough(self, u: Utterance) -> bool:
         return u.peak_rms >= max(CLOSE_MIN_RMS, CLOSE_FLOOR_RATIO * self.segmenter.noise_floor)
 
+    def _command(self, heard: Heard) -> Heard:
+        """"Oye Fred, descansa." / "Hey Fred, gracias.": a wake whose rest is only a command."""
+        if heard.kind == "wake" and heard.rest:
+            for probe in (heard.rest, f"{self.name} {heard.rest}"):
+                kind = classify(probe, self.name).kind
+                if kind in ("pause", "resume", "close"):
+                    return Heard(kind, "")
+        return heard
+
+    def _for_another_rover(self, text: str) -> bool:
+        return any(classify(text, other).kind != "other" for other in self._others)
+
     def handle(self, u: Utterance) -> None:
-        """Transcribe one utterance and act on it. Raises SttError; never LinkError."""
+        """Transcribe one utterance and act on it. Raises SttError; never LinkError.
+
+        Logged: the command kind, or the question after the wake. Never the full transcript:
+        whatever was said before "Hey Fred" in the same breath is room talk."""
         t0 = self.clock()
         text = self.transcriber.transcribe(u.pcm)
         stt = self.clock() - t0
         if not text or is_phantom(text):
             return
-        heard = classify(text, self.name)
+        heard = self._command(classify(text, self.name))
         state = self.state
 
         if state == PAUSED:
             if heard.kind == "resume":
-                log.info("%s heard: %s", self.name, text)
+                log.info("%s command: resume", self.name)
                 self._state = WAITING
                 self._say(SAY_RESUMED)
             return
         if heard.kind in ("pause", "resume"):
-            log.info("%s heard: %s", self.name, text)
+            log.info("%s command: %s", self.name, heard.kind)
             if heard.kind == "pause":
                 self._end_conversation()
                 self._state = PAUSED
@@ -124,12 +140,12 @@ class RoverSession:
             return
         if heard.kind == "close":
             if state == CONVERSATION and self._loud_enough(u):
-                log.info("%s heard: %s", self.name, text)
+                log.info("%s command: close", self.name)
                 self._end_conversation()
                 self._say(SAY_GOODBYE)
             return
         if heard.kind == "wake":
-            log.info("%s heard: %s", self.name, text)
+            log.info("%s wake: %s", self.name, heard.rest or "(sin pregunta)")
             if len(heard.rest) < MIN_QUESTION_CHARS:
                 self._state = CONVERSATION
                 self._say(SAY_LISTENING)
@@ -137,7 +153,7 @@ class RoverSession:
                 return
             self._answer(heard.rest, t0, stt)
             return
-        if state == CONVERSATION:
+        if state == CONVERSATION and not self._for_another_rover(text):
             self._answer(text, t0, stt)
 
     # ------------------------------------------------------------------ speaking
@@ -168,9 +184,9 @@ class RoverSession:
         self.connected = False
         self._end_conversation()
 
-    def _open(self) -> Playback | None:
+    def _open(self, prelude: bytes = b"") -> Playback | None:
         try:
-            return Playback(self.link.speaker(), self.clock)
+            return Playback(self.link.speaker(prelude=prelude), self.clock, len(prelude))
         except LinkError as e:
             self._lost(e)
             return None
@@ -210,12 +226,16 @@ class RoverSession:
                                     args=(list(self.history), audio, spoken, times, cancel))
         producer.start()  # the brain starts thinking while the speaker opens (~0.3 s)
 
-        pb = self._open()
+        try:
+            beep_in = self._beep("in")
+        except Exception as e:
+            log.error("%s: cannot load beep in: %s", self.name, e)
+            beep_in = b""
+        pb = self._open(beep_in)  # the beep plays the moment aplay starts
         if pb is None:
             cancel.set()
             producer.join(_JOIN_S)
             return
-        pb.put(self._beep("in"))
         try:
             item = audio.get(timeout=self.filler_after)
         except queue.Empty:
@@ -265,9 +285,9 @@ class RoverSession:
         try:
             answer = self.brain.answer(history, self.name, self.camera)
             for sentence in answer:
-                if cancel.is_set():
-                    return
                 times.setdefault("first_sentence", self.clock())
+                if cancel.is_set():
+                    return  # dead answer: don't hold the Voice lock for it
                 if sentence == Brain.FAILURE:
                     pcm = self._phrase(sentence)
                 else:
@@ -296,7 +316,7 @@ class RoverSession:
             self._muted = True
             return
         if self._muted:
-            self.segmenter.reset()  # forget a half-heard tail of the rover's own voice
+            self.segmenter.reset(keep_floor=True)  # forget a half-heard tail, keep the room
             self._muted = False
         for u in self.segmenter.feed(chunk):
             self.handle(u)

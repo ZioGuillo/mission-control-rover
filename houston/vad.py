@@ -48,16 +48,19 @@ class Segmenter:
     def noise_floor(self) -> float:
         return self._floor
 
-    def reset(self) -> None:
+    def reset(self, keep_floor: bool = False) -> None:
+        """Forget buffered and partial speech. keep_floor=True keeps what was learned about the
+        room (noise floor, stuck-noise state): use it after a mute; a full reset on a new stream."""
         self._pending = bytearray()
-        self._floor = _SEED_FLOOR
+        if not keep_floor:
+            self._floor = _SEED_FLOOR
+            self._after_cut = False  # previous utterance ended on a max-length cut
         self._speaking = False
         self._voiced = 0
         self._quiet = 0
         self._peak = 0.0
         self._rmss: list[float] = []
         self._lead = 0
-        self._after_cut = False  # previous utterance ended on a max-length cut
         self._buf = bytearray()
         # onset frames are part of the ring, so keep quiet pre-roll plus the onset
         self._pre: deque[tuple[bytes, float]] = deque(maxlen=_PREROLL_FRAMES + _ONSET_FRAMES)

@@ -11,13 +11,15 @@ BYTES_PER_S = 48000 * 2  # 48 kHz mono S16_LE
 
 
 class Playback:
-    def __init__(self, speaker, clock: Callable[[], float]) -> None:
+    def __init__(self, speaker, clock: Callable[[], float], prelude: int = 0) -> None:
+        """`prelude`: bytes the Speaker already wrote while starting (the beep)."""
         self._speaker, self._clock = speaker, clock
         self._q: queue.Queue = queue.Queue()
         self.error: LinkError | None = None
-        self.started: float | None = None       # clock when the first byte went to the speaker
+        # clock when the first byte went to the speaker
+        self.started: float | None = clock() if prelude else None
         self.first_answer: float | None = None  # clock when the first answer (not beep/filler) did
-        self.written = 0
+        self.written = prelude
         self._thread = threading.Thread(target=self._run, name="houston-playback", daemon=True)
         self._thread.start()
 

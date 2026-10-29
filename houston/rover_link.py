@@ -59,12 +59,20 @@ class Speaker:
     """One `ssh ... aplay` playback stream; the constructor starts it (retrying while busy)."""
 
     def __init__(self, start: Callable[[], subprocess.Popen],
-                 sleep: Callable[[float], None] = time.sleep) -> None:
+                 sleep: Callable[[float], None] = time.sleep, prelude: bytes = b"") -> None:
+        """`prelude` (e.g. the quindar beep) is written as soon as aplay starts, before the
+        start check, so it plays without that delay; a busy retry sends it again."""
         for attempt in range(_START_TRIES):
             try:
                 proc = start()
             except OSError as e:
                 raise LinkError(f"speaker failed to start: {e}") from e
+            if prelude:
+                try:
+                    proc.stdin.write(prelude)
+                    proc.stdin.flush()
+                except (OSError, ValueError):
+                    pass  # aplay already died: the start check below says why
             waited = 0.0
             while waited < _START_CHECK_S and proc.poll() is None:
                 sleep(_POLL_S)
@@ -166,9 +174,10 @@ class RoverLink:
         if r.returncode != 0:
             raise LinkError(f"{self.ssh}: unreachable")
 
-    def speaker(self) -> Speaker:
+    def speaker(self, prelude: bytes = b"") -> Speaker:
         _, spk = self.detect()
         self._ensure_master()
         cmd = f"exec aplay -q -D plughw:CARD={spk},DEV=0 -t raw -f S16_LE -r 48000 -c 1 -"
         return Speaker(lambda: self._popen(self.ssh_args() + [cmd], stdin=subprocess.PIPE,
-                                           stderr=subprocess.PIPE), sleep=self._sleep)
+                                           stderr=subprocess.PIPE), sleep=self._sleep,
+                       prelude=prelude)
