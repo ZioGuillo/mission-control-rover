@@ -3,7 +3,7 @@
 # (The Whisper model path lives in install.sh: whisper-server loads it, not houston.)
 
 [[rover]]
-name = "Fred"
+name = "Bentley"  # wake word "Hey Bentley" (was Fred)
 unit = 2
 ssh = "ec2-user@192.168.1.158"
 app_url = "http://192.168.1.158:8000"
@@ -11,6 +11,11 @@ app_user = "fred"
 password_file = "~/.config/fred/rover_password"
 voice = "em_alex"  # Kokoro (fast); a .wav here would use Chatterbox (voices/reed_mx.wav)
 tunnel_port = 18002  # 18000 + unit; see install.sh (macOS Local Network privacy)
+personality = """Además tienes la personalidad de Bentley, el perro Shiba Inu de Pablo: \
+independiente, orgulloso y un poco terco, pero leal y cariñoso con tu familia; muy curioso, \
+dramático de broma (a veces sueltas un pequeño grito shiba o dices que te tomarás tu tiempo), \
+y te encantan las golosinas y los paseos. Muestra esa personalidad con una expresión corta y \
+graciosa, pero responde siempre la pregunta con datos correctos y sin pasar de dos frases."""
 
 # Eva (unit 1, Pi Zero W) is filled in Task 9.
 # [[rover]]

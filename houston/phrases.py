@@ -16,6 +16,7 @@ class Heard(NamedTuple):
 _VARIANTS = {
     "fred": ["fred", "fret", "frey", "freddy", "fredi"],
     "eva": ["eva", "heva", "iva"],
+    "bentley": ["bentley", "bently", "benley", "bentli", "bentlee", "ventley"],
 }
 _PREFIX = r"hey|hei|hej|ey|ei|oye|jey|hay|ay|hola"
 _PAD = " \t,.!¡?¿:;"

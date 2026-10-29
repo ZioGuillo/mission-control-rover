@@ -315,3 +315,13 @@ def test_slow_answer_after_first_sentence_stops_quietly(ollama):
     out = list(brain.answer(ask("¿Qué es Marte?"), "Fred", FakeCamera()))
     assert out == ["Primera frase."]
     hold.set()
+
+
+def test_personality_goes_into_both_prompts(ollama):
+    fake = ollama([call("mirar", pregunta="¿Qué hay?"), DONE], [say("Veo un sofá."), DONE])
+    shiba = "Tienes la personalidad de un perro Shiba Inu."
+    list(brain_for(fake.url).answer([{"role": "user", "content": "¿Hay alguien contigo?"}], "Bentley", FakeCamera(),
+                                    personality=shiba))
+    assert shiba in fake.bodies[0]["messages"][0]["content"]
+    assert "Bentley" in fake.bodies[0]["messages"][0]["content"]
+    assert shiba in fake.bodies[1]["messages"][0]["content"]  # the vision prompt too

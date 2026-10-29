@@ -48,7 +48,7 @@ def test_camera_url_goes_through_the_tunnel(tmp_path):
 
 def test_shipped_config_loads():
     s = load(Path(__file__).parents[1] / "rovers.toml")
-    assert s.rovers[0].name == "Fred"
+    assert s.rovers[0].name == "Bentley"
     assert s.rovers[0].voice == "em_alex"  # Kokoro voice name (no file)
 
 
@@ -58,3 +58,11 @@ def test_voice_name_stays_a_name_and_wav_becomes_a_path(tmp_path):
     fred, eva = load(f).rovers
     assert fred.voice == (tmp_path / "voices/x.wav").resolve()
     assert eva.voice == "em_alex"
+
+
+def test_personality_is_optional(tmp_path):
+    f = tmp_path / "rovers.toml"
+    f.write_text(TOML)
+    assert load(f).rovers[0].personality == ""
+    f.write_text(TOML.replace('voice = "voices/x.wav"', 'voice = "voices/x.wav"\npersonality = "Shiba"'))
+    assert load(f).rovers[0].personality == "Shiba"

@@ -1,3 +1,4 @@
+import dataclasses
 import logging
 import os
 import re
@@ -168,10 +169,12 @@ class FakeBrain:
     def __init__(self, *answers, before=None):
         self.answers = list(answers)
         self.calls: list[tuple[list[dict], str]] = []
+        self.personalities: list[str] = []
         self._before = before
 
-    def answer(self, history, name, camera):
+    def answer(self, history, name, camera, personality=""):
         self.calls.append(([dict(m) for m in history], name))
+        self.personalities.append(personality)
         reply = self.answers.pop(0) if self.answers else ["Listo."]
         if self._before:
             self._before()
@@ -840,3 +843,12 @@ def test_speech_right_after_the_rover_goes_quiet_is_heard():
     airtime.stop(quiet_at=10.0)
     assert airtime.busy(10.1)        # the speaker's own tail / room echo is still ignored
     assert not airtime.busy(10.2)    # a person answering right away is heard
+
+
+def test_session_passes_the_rover_personality_to_the_brain():
+    brain = FakeBrain(["Hola."])
+    r = dataclasses.replace(rover("Bentley"), personality="Eres un Shiba Inu.")
+    s = RoverSession(r, Settings(rovers=[r]), brain, FakeVoice(), FakeTranscriber(), Clock(),
+                     link=FakeLink(), camera=object(), beep=fake_beep)
+    s.handle(utter("Hey Bentley, ¿qué tal?"))
+    assert brain.personalities == ["Eres un Shiba Inu."]

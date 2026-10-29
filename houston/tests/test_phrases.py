@@ -40,3 +40,18 @@ def test_phantoms(text):
 def test_plain_gracias_is_not_phantom():
     # the close rule needs it; Task 7 gates it on energy
     assert not is_phantom("Gracias.")
+
+
+@pytest.mark.parametrize("text,rest", [
+    ("Hey Bentley, ¿qué ves?", "qué ves"),
+    ("Hola Bently", ""),
+    ("Oye Benley, ¿cuántas lunas tiene Marte?", "cuántas lunas tiene Marte"),
+    ("Hey Bentli", ""),
+])
+def test_bentley_wakes(text, rest):
+    heard = classify(text, "Bentley")
+    assert heard.kind == "wake" and heard.rest == rest
+
+
+def test_bentley_does_not_wake_on_fred():
+    assert classify("Hey Fred, ¿qué ves?", "Bentley").kind == "other"

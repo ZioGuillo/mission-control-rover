@@ -321,7 +321,7 @@ class RoverSession:
         """Brain sentences -> PCM, one at a time, so sentence N+1 is made while N plays."""
         answer = None
         try:
-            answer = self.brain.answer(history, self.name, self.camera)
+            answer = self.brain.answer(history, self.name, self.camera, self.rover.personality)
             for sentence in answer:
                 times.setdefault("first_sentence", self.clock())
                 if cancel.is_set():

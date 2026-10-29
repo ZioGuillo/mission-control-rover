@@ -22,6 +22,8 @@ class Rover:
     # With a tunnel_port, install.sh runs an ssh master per rover forwarding this localhost port
     # to the rover app, and the camera goes through it.
     tunnel_port: int | None = None
+    # Extra character for this rover, added to its prompts (e.g. Bentley = Pablo's Shiba Inu).
+    personality: str = ""
 
     @property
     def camera_url(self) -> str:

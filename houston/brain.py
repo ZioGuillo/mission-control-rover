@@ -79,14 +79,14 @@ class Brain:
         if "error" in reply:
             raise BrainError(f"ollama: {reply['error']}")
 
-    def answer(self, history: list[dict], name: str, camera) -> Iterator[str]:
+    def answer(self, history: list[dict], name: str, camera, personality: str = "") -> Iterator[str]:
         """Speakable sentences as they stream; ends with FAILURE if anything breaks.
 
         The whole answer gets deadline_s: past it, FAILURE if nothing was said yet, else it just
         stops. The work runs in a thread so a stalled Ollama read can't hold the rover hostage."""
         out: queue.Queue = queue.Queue()
         stop = threading.Event()
-        worker = threading.Thread(target=self._work, args=(history, name, camera, out, stop),
+        worker = threading.Thread(target=self._work, args=(history, name, camera, personality, out, stop),
                                   name="houston-brain", daemon=True)
         worker.start()
         deadline = time.monotonic() + self.deadline_s
@@ -111,22 +111,22 @@ class Brain:
         finally:
             stop.set()  # also on close(): the worker drops the Ollama stream at its next line
 
-    def _work(self, history: list[dict], name: str, camera, out: queue.Queue,
+    def _work(self, history: list[dict], name: str, camera, personality: str, out: queue.Queue,
               stop: threading.Event) -> None:
         try:
-            for sentence in self._answer(history, name, camera, stop):
+            for sentence in self._answer(history, name, camera, personality, stop):
                 out.put(("sentence", sentence))
             out.put(("end", None))
         except Exception as e:  # camera, Ollama, NASA-unrelated bugs: the rover must still speak
             out.put(("error", e))
 
-    def _answer(self, history: list[dict], name: str, camera,
+    def _answer(self, history: list[dict], name: str, camera, personality: str,
                 stop: threading.Event) -> Iterator[str]:
         question = history[-1]["content"]
         if LOOK.search(question):
-            yield from self._look(question, name, camera, stop)
+            yield from self._look(question, name, camera, personality, stop)
             return
-        messages = [{"role": "system", "content": prompts.system(name, self.facts)}]
+        messages = [{"role": "system", "content": prompts.system(name, self.facts, personality)}]
         messages += [dict(m) for m in history[-HISTORY_TURNS:]]
         think = "medium"
         for _ in range(MAX_TOOL_ROUNDS + 1):
@@ -144,7 +144,7 @@ class Brain:
                 fn = call.get("function") or {}
                 if fn.get("name") == "mirar":
                     yield from self._look((fn.get("arguments") or {}).get("pregunta") or question,
-                                          name, camera, stop)
+                                          name, camera, personality, stop)
                     return
             messages.append({"role": "assistant", "content": content, "thinking": thinking, "tool_calls": calls})
             for call in calls:
@@ -167,11 +167,11 @@ class Brain:
             return name, {"error": f"no se pudo consultar a la NASA: {e}"}
         return name, {"error": f"herramienta desconocida: {name}"}
 
-    def _look(self, question: str, name: str, camera, stop: threading.Event) -> Iterator[str]:
+    def _look(self, question: str, name: str, camera, personality: str, stop: threading.Event) -> Iterator[str]:
         jpeg = camera.snapshot(timeout=_SNAPSHOT_TIMEOUT_S)  # CameraError -> FAILURE, no made-up scene
         splitter = Splitter()
         for msg in self._stream({"model": self.settings.vlm, "think": False, "keep_alive": _LLM_KEEP_ALIVE, "messages": [
-                {"role": "system", "content": prompts.vision(name)},
+                {"role": "system", "content": prompts.vision(name, personality)},
                 {"role": "user", "content": question, "images": [base64.b64encode(jpeg).decode()]}]},
                 stop):
             yield from splitter.push(msg.get("content") or "")

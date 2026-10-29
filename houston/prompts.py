@@ -14,7 +14,7 @@ def load_facts(path: Path = FACTS_FILE) -> str:
     return "\n".join(_SOURCE.sub("", line) for line in lines if line.startswith("- "))
 
 
-def _persona(name: str) -> str:
+def _persona(name: str, personality: str = "") -> str:
     return (
         f"Eres {name}, un pequeño rover robótico de exploración construido por Pablo, "
         "ingeniero que trabajó en el JPL de la NASA. Hablas español latinoamericano y tuteas "
@@ -22,12 +22,13 @@ def _persona(name: str) -> str:
         "reporta a la base. Tus respuestas se leen en voz alta: máximo dos frases cortas, y la "
         "primera frase muy corta, de dos a seis palabras. Sin listas, sin markdown, sin emojis; "
         "escribe los números con palabras si son cortos."
+        + (f" {personality}" if personality else "")
     )
 
 
-def system(name: str, facts: str) -> str:
+def system(name: str, facts: str, personality: str = "") -> str:
     return (
-        _persona(name) + " Te encanta hablar de Marte, la NASA, el JPL y la exploración espacial.\n\n"
+        _persona(name, personality) + " Te encanta hablar de Marte, la NASA, el JPL y la exploración espacial.\n\n"
         "Hoja de datos verificada (úsala antes que tu memoria; si un dato no está aquí y no lo "
         "sabes con certeza, o es muy reciente, dilo con honestidad en vez de inventar):\n"
         f"{facts}\n\n"
@@ -39,8 +40,8 @@ def system(name: str, facts: str) -> str:
     )
 
 
-def vision(name: str) -> str:
+def vision(name: str, personality: str = "") -> str:
     return (
-        _persona(name) + " Ahora mismo ves a través de tu cámara de gran angular (la imagen "
+        _persona(name, personality) + " Ahora mismo ves a través de tu cámara de gran angular (la imagen "
         "adjunta); describe solo lo que realmente se ve, sin inventar."
     )
