@@ -1,0 +1,110 @@
+import numpy as np
+import pytest
+
+from houston import voice as voice_mod
+from houston.voice import Voice, beep
+
+
+class FakeTensor:
+    def __init__(self, a):
+        self.a = a
+
+    def detach(self):
+        return self
+
+    def cpu(self):
+        return self
+
+    def numpy(self):
+        return self.a
+
+
+class FakeModel:
+    sr = 24000
+
+    def __init__(self):
+        self.calls = []
+
+    def generate(self, text, **kw):
+        self.calls.append((text, kw))
+        t = np.arange(24000) / 24000
+        return FakeTensor((0.3 * np.sin(2 * np.pi * 220 * t)).astype(np.float32)[None, :])
+
+
+@pytest.fixture
+def make(tmp_path):
+    model = FakeModel()
+    loads = []
+
+    def factory(device):
+        loads.append(device)
+        return model
+
+    def build(device="cpu"):
+        return Voice(device, model_factory=factory, cache_root=tmp_path / "cache"), model, loads
+
+    return build
+
+
+def test_synth_is_48k_mono_s16_slowed(make):
+    v, model, _ = make()
+    raw = v.synth("Hola", voice_mod.Path("reed_mx.wav"))
+    expected = 1 / 0.9 * 48000 * 2
+    assert abs(len(raw) - expected) <= expected * 0.02
+    text, kw = model.calls[0]
+    assert text == "Hola"
+    assert (kw["language_id"], kw["cfg_weight"], kw["exaggeration"]) == ("es", 0.3, 0.5)
+    assert str(kw["audio_prompt_path"]) == "reed_mx.wav"
+
+
+def test_model_loads_lazily_once(make):
+    v, _, loads = make("mps")
+    assert loads == []
+    v.synth("a", voice_mod.Path("x.wav"))
+    v.synth("b", voice_mod.Path("x.wav"))
+    assert loads == ["mps"]
+
+
+def test_synth_keeps_pitch(make):
+    v, _, _ = make()
+    raw = np.frombuffer(v.synth("a", voice_mod.Path("x.wav")), dtype="<i2").astype(float)
+    spec = np.abs(np.fft.rfft(raw[4800:-4800]))
+    peak = np.argmax(spec) * 48000 / (len(raw) - 9600)
+    assert abs(peak - 220) < 8
+
+
+def test_cached_generates_once_and_survives_new_instance(make, tmp_path):
+    v, model, _ = make()
+    w = tmp_path / "paulina_mx.wav"
+    w.write_bytes(b"a")
+    a = v.cached("¿Hola, Fred?", w)
+    b = v.cached("¿Hola, Fred?", w)
+    assert a == b and len(model.calls) == 1
+    files = list((tmp_path / "cache" / "paulina_mx").glob("*.raw"))
+    assert len(files) == 1 and files[0].name.startswith("hola_fred")
+    v2, model2, _ = make()  # new Voice, same fake model: no further generate call
+    assert v2.cached("¿Hola, Fred?", w) == a and len(model2.calls) == 1
+    assert not list((tmp_path / "cache").rglob("*.tmp*"))
+
+
+def test_cache_key_depends_on_text_and_voice(make, tmp_path):
+    v, model, _ = make()
+    a, b = tmp_path / "reed_mx.wav", tmp_path / "paulina_mx.wav"
+    a.write_bytes(b"1")
+    b.write_bytes(b"2")
+    v.cached("hola", a)
+    v.cached("hola", b)
+    v.cached("hola!", a)
+    assert len(model.calls) == 3
+    long = "palabra " * 40
+    v.cached(long, a)
+    v.cached(long + "otra", a)
+    assert len(model.calls) == 5
+    assert all(len(p.stem) <= 60 + 1 + 12 for p in (tmp_path / "cache").rglob("*.raw"))
+
+
+def test_beep_is_48k_raw_and_cached():
+    for name in ("in", "out"):
+        raw = beep(name)
+        assert len(raw) % 2 == 0 and len(raw) > 4800
+        assert beep(name) is raw
