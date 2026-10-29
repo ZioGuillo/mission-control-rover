@@ -248,7 +248,9 @@ def test_fact_sheet_loads_without_urls_or_header():
     facts = prompts.load_facts()
     assert "Revisado por Pablo" not in facts and "http" not in facts
     assert "687" in facts and "72" in facts
-    assert 15 <= len(facts.splitlines()) <= 30
+    assert 15 <= len(prompts.load_facts(prompts.FACTS_FILE).splitlines()) <= 30  # Mars sheet
+    assert len(facts.splitlines()) <= 70  # all sheets: every line rides in every prompt
+    assert "guion" not in facts  # talk-sheet sources are stripped too
 
 
 @pytest.mark.parametrize("question", [
@@ -340,3 +342,12 @@ def test_prompt_forbids_numbers_not_in_the_sheet():
     text = prompts.system("Bentley", prompts.load_facts())
     assert "299" in text  # speed of light is on the sheet
     assert "aproximad" in text and "no estás seguro" in text
+
+
+def test_talk_sheet_is_in_the_prompt_and_bentley_can_rehearse():
+    # Pablo asked Bentley to know his CITIC talk ("Sistemas que no pueden fallar") to help him.
+    facts = prompts.load_facts()
+    assert "siete veces" in facts            # from facts/charla.md
+    assert "seiscientos ochenta y siete" in facts or "687" in facts  # marte.md still there
+    text = prompts.system("Bentley", facts)
+    assert "ensayar" in text and "Sistemas que no pueden fallar" in text

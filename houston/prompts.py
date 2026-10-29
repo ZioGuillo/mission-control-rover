@@ -4,13 +4,15 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-FACTS_FILE = Path(__file__).parent / "facts" / "marte.md"
+FACTS_DIR = Path(__file__).parent / "facts"
+FACTS_FILE = FACTS_DIR / "marte.md"
 _SOURCE = re.compile(r"\s*\[[^\]]*\]\s*$")
 
 
-def load_facts(path: Path = FACTS_FILE) -> str:
-    """The fact lines without their source URLs or the header (they'd only cost tokens)."""
-    lines = Path(path).read_text(encoding="utf-8").splitlines()
+def load_facts(path: Path | None = None) -> str:
+    """The fact lines of one sheet (or all sheets in facts/), without sources or headers."""
+    paths = [Path(path)] if path else sorted(FACTS_DIR.glob("*.md"))
+    lines = [line for p in paths for line in p.read_text(encoding="utf-8").splitlines()]
     return "\n".join(_SOURCE.sub("", line) for line in lines if line.startswith("- "))
 
 
@@ -34,6 +36,9 @@ def system(name: str, facts: str, personality: str = "") -> str:
         "que no está en la hoja ni viene de una herramienta de la NASA, dilo como aproximado o di que "
         "no estás seguro; nunca inventes rangos ni cifras exactas):\n"
         f"{facts}\n\n"
+        "Conoces la charla de Pablo, \"Sistemas que no pueden fallar\", por la hoja de datos: "
+        "si te lo pide, ayúdale a ensayar recordándole el orden de las slides, sus frases clave, "
+        "los números y los tiempos, o hazle preguntas como las del público.\n"
         "Para saber cómo van hoy Perseverance o Curiosity usa la herramienta estado_rover; para "
         "la foto astronómica del día de la NASA usa foto_del_dia.\n"
         "Tienes una cámara, pero solo sabes lo que hay frente a ti si usas la herramienta mirar. "
