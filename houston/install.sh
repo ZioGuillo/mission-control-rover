@@ -11,18 +11,34 @@ SUPPORT="$HOME/Library/Application Support/houston"
 RUNTIME="$SUPPORT/runtime"
 VENV="$SUPPORT/venv"
 AGENTS="$HOME/Library/LaunchAgents"
-MODEL="$HOME/Library/Caches/houston/ggml-large-v3-turbo.bin"
+MODEL="$HOME/Library/Caches/houston/ggml-large-v3-turbo.bin"  # the one place the Whisper model is named
 LABELS=(local.missioncontrol.whisper local.missioncontrol.houston)
 DOMAIN="gui/$(id -u)"
+LOGS="$HOME/Library/Logs"
+LOG_MAX_BYTES=$((10 * 1024 * 1024))
 
 die() { echo "error: $*" >&2; exit 1; }
+usage() {
+    echo "usage: install.sh | install.sh --uninstall [--purge] | install.sh --render-only DIR" >&2
+    exit 2
+}
+
+# Check every argument before doing anything.
+MODE=install PURGE= OUT=
+case "$#:${1:-}" in
+    0:) ;;
+    1:--uninstall) MODE=uninstall ;;
+    2:--uninstall) [[ "$2" == "--purge" ]] || usage; MODE=uninstall PURGE=1 ;;
+    2:--render-only) [[ -d "$2" ]] || usage; MODE=render OUT="$2" ;;
+    *) usage ;;
+esac
 
 # render_plists DIR: fill the templates with python's plistlib (safe for any characters in paths).
 render_plists() {
-    python3 - "$HERE/launchd" "$1" "$RUNTIME" "$VENV" "$HOME" <<'PY'
+    python3 - "$HERE/launchd" "$1" "$RUNTIME" "$VENV" "$HOME" "$MODEL" <<'PY'
 import plistlib, sys
-src, dst, runtime, venv, home = sys.argv[1:]
-subs = {"@RUNTIME@": runtime, "@VENV@": venv, "@HOME@": home}
+src, dst, runtime, venv, home, model = sys.argv[1:]
+subs = {"@RUNTIME@": runtime, "@VENV@": venv, "@HOME@": home, "@MODEL@": model}
 
 def fill(v):
     if isinstance(v, str):
@@ -43,18 +59,17 @@ for label in ("local.missioncontrol.whisper", "local.missioncontrol.houston"):
 PY
 }
 
-if [[ "${1:-}" == "--render-only" ]]; then
-    [[ -d "${2:-}" ]] || die "usage: install.sh --render-only DIR"
-    render_plists "$2"
+if [[ "$MODE" == render ]]; then
+    render_plists "$OUT"
     exit 0
 fi
 
-if [[ "${1:-}" == "--uninstall" ]]; then
+if [[ "$MODE" == uninstall ]]; then
     for label in "${LABELS[@]}"; do
         launchctl bootout "$DOMAIN/$label" 2>/dev/null || true
         rm -f "$AGENTS/$label.plist"
     done
-    if [[ "${2:-}" == "--purge" ]]; then
+    if [[ -n "$PURGE" ]]; then
         rm -rf "$RUNTIME" "$VENV"
         echo "Runtime copy and venv removed."
     fi
@@ -83,7 +98,7 @@ for model in gpt-oss:120b qwen3.8:27b; do
 done
 
 # Runtime copy outside iCloud (LaunchAgents may be denied there, and iCloud can evict files).
-mkdir -p "$RUNTIME/houston" "$RUNTIME/app/audio" "$HOME/Library/Logs" "$AGENTS"
+mkdir -p "$RUNTIME/houston" "$RUNTIME/app/audio" "$LOGS" "$AGENTS"
 rsync -a --delete --exclude .venv --exclude tests --exclude __pycache__ \
     "$HERE/" "$RUNTIME/houston/"
 rsync -a "$REPO/app/audio/quindar_in.wav" "$REPO/app/audio/quindar_out.wav" "$RUNTIME/app/audio/"
@@ -99,6 +114,15 @@ for label in "${LABELS[@]}"; do
         launchctl print "$DOMAIN/$label" >/dev/null 2>&1 || break
         sleep 1
     done
+done
+# Both jobs are stopped, so nothing writes these now: start over if a crash loop grew one past 10 MB.
+for log in houston.stderr.log whisper.stderr.log; do
+    if [[ -f "$LOGS/$log" ]] && (( $(stat -f %z "$LOGS/$log") > LOG_MAX_BYTES )); then
+        : > "$LOGS/$log"
+        echo "Truncated $LOGS/$log (over 10 MB)."
+    fi
+done
+for label in "${LABELS[@]}"; do
     for attempt in 1 2 3 4 5; do
         launchctl bootstrap "$DOMAIN" "$AGENTS/$label.plist" && break
         [[ $attempt -lt 5 ]] || die "launchctl bootstrap failed for $label"

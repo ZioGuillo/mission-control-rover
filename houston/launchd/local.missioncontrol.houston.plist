@@ -16,6 +16,10 @@
     <dict>
         <key>PATH</key>
         <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>TQDM_DISABLE</key>
+        <string>1</string>
+        <key>HF_HUB_OFFLINE</key>
+        <string>1</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>

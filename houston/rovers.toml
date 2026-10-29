@@ -1,6 +1,6 @@
 [settings]
-# Defaults: whisper_model = ~/Library/Caches/houston/ggml-large-v3-turbo.bin
-#           nasa_key_file = ~/.config/houston/nasa_key
+# Default: nasa_key_file = ~/.config/houston/nasa_key
+# (The Whisper model path lives in install.sh: whisper-server loads it, not houston.)
 
 [[rover]]
 name = "Fred"

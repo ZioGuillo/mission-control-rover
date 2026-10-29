@@ -5,7 +5,6 @@ import tomllib
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 
-DEFAULT_WHISPER_MODEL = Path("~/Library/Caches/houston/ggml-large-v3-turbo.bin")
 DEFAULT_NASA_KEY_FILE = Path("~/.config/houston/nasa_key")
 
 
@@ -25,7 +24,6 @@ class Settings:
     rovers: list[Rover]
     ollama_url: str = "http://127.0.0.1:11434"
     whisper_url: str = "http://127.0.0.1:8178"
-    whisper_model: Path = field(default_factory=lambda: DEFAULT_WHISPER_MODEL.expanduser())
     llm: str = "gpt-oss:120b"
     vlm: str = "qwen3.8:27b"
     conversation_timeout: float = 60.0
@@ -55,7 +53,6 @@ def load(path: Path) -> Settings:
     unknown = set(opts) - allowed
     if unknown:
         raise ValueError(f"unknown settings in {path}: {sorted(unknown)}")
-    for key in ("whisper_model", "nasa_key_file"):
-        if key in opts:
-            opts[key] = _resolve(opts[key], base)
+    if "nasa_key_file" in opts:
+        opts["nasa_key_file"] = _resolve(opts["nasa_key_file"], base)
     return Settings(rovers=rovers, **opts)

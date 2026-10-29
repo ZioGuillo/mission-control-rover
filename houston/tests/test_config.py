@@ -28,7 +28,7 @@ def test_load(tmp_path):
     assert r.voice == (tmp_path / "voices/x.wav").resolve()
     assert s.llm == "other:1b"
     assert s.whisper_url == "http://127.0.0.1:8178"
-    assert s.whisper_model == Path.home() / "Library/Caches/houston/ggml-large-v3-turbo.bin"
+    assert not hasattr(s, "whisper_model")  # install.sh names the model (whisper-server loads it)
     assert s.nasa_key_file == Path.home() / ".config/houston/nasa_key"
 
 

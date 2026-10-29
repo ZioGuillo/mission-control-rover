@@ -8,7 +8,7 @@
     <array>
         <string>/opt/homebrew/bin/whisper-server</string>
         <string>-m</string>
-        <string>@HOME@/Library/Caches/houston/ggml-large-v3-turbo.bin</string>
+        <string>@MODEL@</string>
         <string>-l</string>
         <string>es</string>
         <string>--host</string>
