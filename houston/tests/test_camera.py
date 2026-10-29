@@ -22,7 +22,10 @@ class _Server(HTTPServer):
 class FakeApp:
     """Fake RoboControl: cookie-gated MJPEG stream, form login that 302s like the real app."""
 
-    def __init__(self, password="s3cret", stream_body=None):
+    def __init__(self, password="s3cret", stream_body=None, stall=0.0, chunked=False, login_status=302):
+        self.stall = stall
+        self.chunked = chunked
+        self.login_status = login_status
         self.password = password
         self.sessions = set()
         self.logins = 0
@@ -47,6 +50,11 @@ class FakeApp:
                 self.end_headers()
 
             def do_POST(self):
+                if app.login_status != 302:
+                    self.send_response(app.login_status)
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
                 form = parse_qs(self.rfile.read(int(self.headers["Content-Length"])).decode())
                 app.logins += 1
                 ok = (self.path == "/login" and form.get("username") == ["rover"]
@@ -68,11 +76,21 @@ class FakeApp:
                     return
                 self.send_response(200)
                 self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+                if app.chunked:
+                    self.send_header("Transfer-Encoding", "chunked")
                 self.end_headers()
                 body = app.stream_body or b"".join(
                     b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + j + b"\r\n" for j in (JPEG1, JPEG2))
                 try:
+                    if app.chunked:  # one chunk promising more bytes than are sent, then the app dies
+                        self.wfile.write(b"%x\r\n" % (len(body) + 100) + body)
+                        self.wfile.flush()
+                        self.close_connection = True
+                        return
                     self.wfile.write(body)
+                    if app.stall:
+                        self.wfile.flush()
+                        time.sleep(app.stall)
                 except OSError:
                     pass
 
@@ -89,7 +107,7 @@ class FakeApp:
 
 
 @pytest.fixture
-def fake(tmp_path):
+def fake():
     apps = []
 
     def make(**kw):
@@ -198,3 +216,23 @@ def test_frame_split_across_chunks(fake, pwfile):
     big = b"\xff\xd8" + b"y" * 300_000 + b"\xff\xd9"
     app = fake(stream_body=b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + big + b"\r\n--frame\r\n")
     assert AppCamera(app.url, "rover", pwfile).snapshot() == big
+
+
+def test_stream_stalling_mid_frame_bounded_by_timeout(fake, pwfile):
+    app = fake(stream_body=b"--frame\r\n\r\n\xff\xd8half-a-frame", stall=5)
+    t = time.monotonic()
+    with pytest.raises(CameraError):
+        AppCamera(app.url, "rover", pwfile).snapshot(timeout=1)
+    assert time.monotonic() - t < 1.5
+
+
+def test_login_http_500_raises(fake, pwfile):
+    app = fake(login_status=500)
+    with pytest.raises(CameraError):
+        AppCamera(app.url, "rover", pwfile).snapshot()
+
+
+def test_chunked_stream_cut_mid_frame_raises(fake, pwfile):
+    app = fake(chunked=True, stream_body=b"--frame\r\n\r\n\xff\xd8half-a-frame")
+    with pytest.raises(CameraError):
+        AppCamera(app.url, "rover", pwfile).snapshot()

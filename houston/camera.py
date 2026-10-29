@@ -1,6 +1,7 @@
 """Camera frames: one JPEG from the rover app's MJPEG stream, logged in as the app user."""
 from __future__ import annotations
 
+import http.client
 import http.cookiejar
 import time
 import urllib.error
@@ -57,7 +58,7 @@ class AppCamera:
             resp = self._open(urllib.request.Request(f"{self.app_url}/login", data=data), deadline)
         except urllib.error.HTTPError as e:
             resp = e
-        except (urllib.error.URLError, OSError) as e:
+        except (urllib.error.URLError, OSError, http.client.HTTPException) as e:
             raise CameraError(f"app login: {e}") from e
         with resp:
             where = resp.headers.get("Location", "")
@@ -73,21 +74,27 @@ class AppCamera:
             if e.code in (302, 303, 307) and urllib.parse.urlparse(e.headers.get("Location", "")).path == "/login":
                 return None
             raise CameraError(f"camera stream: HTTP {e.code}") from e
-        except (urllib.error.URLError, OSError) as e:
+        except (urllib.error.URLError, OSError, http.client.HTTPException) as e:
             raise CameraError(f"camera stream: {e}") from e
         buf = b""
         try:
             with resp:
-                while len(buf) < _MAX_BYTES and time.monotonic() < deadline:
-                    chunk = resp.read(_CHUNK)
+                sock = resp.fp.raw._sock  # bound each blocking read by the time left
+                while len(buf) < _MAX_BYTES:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise CameraError("camera timed out waiting for a frame")
+                    sock.settimeout(remaining)
+                    chunk = resp.read1(_CHUNK)
                     if not chunk:
                         break
                     buf += chunk
                     start = buf.find(_SOI)
                     if start >= 0:
+                        # first EOI ends the frame: MJPEG frames carry no EXIF thumbnail
                         end = buf.find(_EOI, start + 2)
                         if end >= 0:
                             return buf[start:end + 2]
-        except OSError as e:
+        except (OSError, http.client.HTTPException) as e:
             raise CameraError(f"camera stream: {e}") from e
         raise CameraError("no complete JPEG in camera stream")
