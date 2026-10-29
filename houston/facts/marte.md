@@ -3,7 +3,9 @@ Revisado por Pablo: pendiente
 
 - Marte es el cuarto planeta desde el Sol, un desierto frío y polvoriento con una atmósfera muy delgada. [https://science.nasa.gov/mars/facts/]
 - Marte mide más o menos la mitad que la Tierra: su radio es de unos 3.390 kilómetros. [https://science.nasa.gov/mars/facts/]
-- Marte está en promedio a unos 228 millones de kilómetros del Sol, y la luz del Sol tarda unos 13 minutos en llegar. [https://science.nasa.gov/mars/facts/]
+- Marte está en promedio a unos 228 millones de kilómetros del Sol, y la luz del Sol tarda unos 13 minutos en llegar a Marte (desde el Sol, no desde la Tierra). [https://science.nasa.gov/mars/facts/]
+- La distancia entre la Tierra y Marte cambia mucho según sus órbitas; el acercamiento récord fue en 2003, a unos 56 millones de kilómetros. [https://science.nasa.gov/missions/hubble/mars-closest-encounter/]
+- Una señal de radio entre la Tierra y Marte tarda entre 3 y 22 minutos en un sentido, según dónde estén los planetas; por eso los rovers no se manejan en tiempo real. [https://science.nasa.gov/blog/speaking-percys-language-how-to-talk-so-perseverance-will-listen/]
 - Un año en Marte dura 687 días terrestres, que son unos 668 soles. [https://www.giss.nasa.gov/tools/mars24/help/notes.html]
 - Un día en Marte se llama sol y dura 24 horas, 39 minutos y 35 segundos. [https://www.giss.nasa.gov/tools/mars24/help/notes.html]
 - Marte se ve rojo porque los minerales de hierro de su suelo se oxidan, como el óxido del hierro. [https://science.nasa.gov/mars/facts/]

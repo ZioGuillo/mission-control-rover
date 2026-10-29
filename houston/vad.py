@@ -35,7 +35,8 @@ def _rms(frame: bytes) -> float:
 class Segmenter:
     """Feed arbitrary-size chunks; completed utterances come back from feed()."""
 
-    def __init__(self, rate: int = 16000, frame_ms: int = 30, end_silence: float = 0.5,
+    # end_silence 0.8 s: at 0.5 s a thinking pause cut questions in half (live test 2026-10-29).
+    def __init__(self, rate: int = 16000, frame_ms: int = 30, end_silence: float = 0.8,
                  max_seconds: float = 15.0, min_seconds: float = 0.4) -> None:
         self._rate = rate
         self._frame_bytes = rate * frame_ms // 1000 * 2

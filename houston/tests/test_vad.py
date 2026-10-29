@@ -167,3 +167,9 @@ def test_fluctuating_noise_step_is_absorbed():
     sig = noise(2) + tone(1, 3000) + noise(2)
     out = [u for i in range(0, len(sig), 3200) for u in seg.feed(sig[i:i + 3200])]
     assert len(out) == 1
+
+
+def test_thinking_pause_mid_question_stays_one_utterance():
+    # Live 2026-10-29: "¿Me puedes decir algún…" and "¿Cuánto dura una transmisión…" were cut off at
+    # a 0.5 s thinking pause. People pause ~0.6 s mid-question; the utterance must hold together.
+    assert len(run(noise(1) + tone(1) + noise(0.6) + tone(1) + noise(1.5))) == 1
