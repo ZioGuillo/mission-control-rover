@@ -28,7 +28,12 @@ _PREFIX = r"hey|hei|hej|ey|ei|oye|hoy|jey|hay|ay|hola"  # "hoy": Whisper's spell
 _PAD = " \t,.!¡?¿:;"
 _PUNCT = r"[\s,.!¡?¿:;]*"
 # A filler word may open a command: "Ok, Bentley, descansa", "Bueno, gracias".
-_LEAD = rf"(?:(?:ok|okay|bueno|ya|oye|hey){_PUNCT})?"
+_LEAD = rf"(?:(?:ok|okay|bueno|ya|oye|hey|gracias){_PUNCT})?"
+# Natural command forms: "puedes descansar", "ve a descansar", "despiértate" (live 2026-10-29).
+_VERBS = {
+    "pause": r"(?:(?:ya\s+)?puedes\s+|ve\s+a\s+|vete\s+a\s+|anda\s+a\s+)?(?:descansa|descansar)",
+    "resume": r"(?:(?:ya\s+)?puedes\s+)?(?:despierta|despiértate|despertar|despertarte)",
+}
 
 # Whisper's stock hallucinations on silence/noise (YouTube outros in its training data).
 # Plain "gracias" is deliberately absent: the close rule needs it.
@@ -47,6 +52,12 @@ def classify(text: str, name: str) -> Heard:
     text = text.strip()
     n = _name_pattern(name)
 
+    # Whole-utterance commands first: "Bentley, ve a descansar" is a command, not a wake.
+    for kind, word in _VERBS.items():
+        cmd = re.compile(rf"^{_PUNCT}{_LEAD}(?:{n}{_PUNCT}{word}|{word}{_PUNCT}{n}){_PUNCT}$", re.I)
+        if cmd.match(text):
+            return Heard(kind, "")
+
     # Whisper sometimes adds an article: "Oye el Bentley".
     wake = re.compile(rf"\b(?:{_PREFIX}){_PUNCT}(?:el\s+)?{_name_pattern(name, prefixed=True)}\b{_PUNCT}", re.I)
     m = wake.search(text)
@@ -63,10 +74,6 @@ def classify(text: str, name: str) -> Heard:
     if close.match(text):
         return Heard("close", "")
 
-    for kind, word in (("pause", "descansa"), ("resume", "despierta")):
-        cmd = re.compile(rf"^{_PUNCT}{_LEAD}(?:{n}{_PUNCT}{word}|{word}{_PUNCT}{n}){_PUNCT}$", re.I)
-        if cmd.match(text):
-            return Heard(kind, "")
 
     return Heard("other", text)
 

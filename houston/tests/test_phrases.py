@@ -95,3 +95,20 @@ def test_hey_wendy_is_bentley_but_wendy_alone_is_a_person():
     assert classify("Hey, Wendy.", "Bentley").kind == "wake"
     assert classify("Oye Wendy, ¿qué ves?", "Bentley").kind == "wake"
     assert classify("Wendy, ven a comer", "Bentley").kind == "other"
+
+
+@pytest.mark.parametrize("text,kind", [
+    ("Gracias. Bentley, puedes descansar.", "pause"),   # live 2026-10-29: answered instead of pausing
+    ("Bentley, ve a descansar", "pause"),
+    ("Ya puedes descansar, Bentley", "pause"),
+    ("Bentley, despiértate", "resume"),
+    ("Bentley, ya puedes despertar", "resume"),
+])
+def test_natural_pause_and_resume_phrases(text, kind):
+    assert classify(text, "Bentley").kind == kind
+
+
+def test_a_question_about_resting_does_not_pause():
+    heard = classify("Bentley, ¿cuándo descansa Perseverance?", "Bentley")
+    assert heard.kind == "wake" and heard.rest == "cuándo descansa Perseverance"
+    assert classify("Bentley " + heard.rest, "Bentley").kind != "pause"  # how the session re-probes it
