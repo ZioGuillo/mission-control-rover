@@ -57,6 +57,46 @@ for label in ("local.missioncontrol.whisper", "local.missioncontrol.houston"):
     with open(f"{dst}/{label}.plist", "wb") as f:
         plistlib.dump(data, f)
 PY
+    render_tunnels "$1"
+}
+
+# render_tunnels DIR: one ssh master per rover with a tunnel_port. macOS Local Network privacy
+# blocks launchd-started Python from the LAN but not /usr/bin/ssh, so this job owns the network
+# connection: houston's ssh calls ride its ControlPath socket and the camera uses the -L forward.
+render_tunnels() {
+    "$(toml_python)" - "$HERE/rovers.toml" "$1" "$HOME" <<'PY'
+import plistlib, sys, tomllib
+from urllib.parse import urlsplit
+toml, dst, home = sys.argv[1:]
+with open(toml, "rb") as f:
+    rovers = tomllib.load(f).get("rover", [])
+for r in rovers:
+    if "tunnel_port" not in r:
+        continue
+    app_port = urlsplit(r["app_url"]).port or 80
+    label = f"local.missioncontrol.tunnel.{r['name'].lower()}"
+    args = ["/usr/bin/ssh", "-N", "-M",
+            "-o", f"ControlPath={home}/.ssh/houston-%C", "-o", "ControlPersist=no",
+            "-o", "BatchMode=yes", "-o", "ConnectTimeout=5",
+            "-o", "ServerAliveInterval=5", "-o", "ServerAliveCountMax=3",
+            "-o", "ExitOnForwardFailure=yes",
+            "-L", f"127.0.0.1:{r['tunnel_port']}:127.0.0.1:{app_port}", r["ssh"]]
+    plist = {"Label": label, "ProgramArguments": args, "RunAtLoad": True, "KeepAlive": True,
+             "ThrottleInterval": 10, "StandardOutPath": "/dev/null",
+             "StandardErrorPath": f"{home}/Library/Logs/houston-tunnel.stderr.log"}
+    with open(f"{dst}/{label}.plist", "wb") as f:
+        plistlib.dump(plist, f)
+    print(label)
+PY
+}
+
+# A python with tomllib (3.11+): the runtime venv once it exists, else the dev venv.
+toml_python() {
+    local p
+    for p in "$VENV/bin/python" "$HERE/.venv/bin/python"; do
+        [[ -x "$p" ]] && { echo "$p"; return; }
+    done
+    die "no python 3.11+ venv found to read rovers.toml"
 }
 
 if [[ "$MODE" == render ]]; then
@@ -64,8 +104,17 @@ if [[ "$MODE" == render ]]; then
     exit 0
 fi
 
+# Tunnel jobs currently installed (one per rover), whatever rovers.toml says now.
+installed_tunnels() {
+    local f
+    for f in "$AGENTS"/local.missioncontrol.tunnel.*.plist; do
+        [[ -e "$f" ]] && basename "$f" .plist
+    done
+    return 0
+}
+
 if [[ "$MODE" == uninstall ]]; then
-    for label in "${LABELS[@]}"; do
+    for label in "${LABELS[@]}" $(installed_tunnels); do
         launchctl bootout "$DOMAIN/$label" 2>/dev/null || true
         rm -f "$AGENTS/$label.plist"
     done
@@ -105,7 +154,14 @@ rsync -a "$REPO/app/audio/quindar_in.wav" "$REPO/app/audio/quindar_out.wav" "$RU
 [[ -x "$VENV/bin/python" ]] || uv venv --python 3.11 "$VENV"
 uv pip install --python "$VENV/bin/python" -r "$HERE/requirements.txt"
 
-render_plists "$AGENTS"
+# Drop tunnels of rovers that were removed from rovers.toml, then render the current set.
+for label in $(installed_tunnels); do
+    launchctl bootout "$DOMAIN/$label" 2>/dev/null || true
+    rm -f "$AGENTS/$label.plist"
+done
+render_plists "$AGENTS" >/dev/null
+# Tunnels first: houston's ssh calls and camera ride on them.
+LABELS=($(installed_tunnels) "${LABELS[@]}")
 for label in "${LABELS[@]}"; do
     plutil -lint "$AGENTS/$label.plist" >/dev/null
     launchctl bootout "$DOMAIN/$label" 2>/dev/null || true

@@ -75,10 +75,19 @@ no route); ssh's own messages land in `houston.stderr.log`.
   (so Fred and Eva in one room never answer each other).
 - In a conversation, one-word noises ("Mmm.", "¿Qué?") are ignored; commands like "Gracias" still work.
 
+## Why each rover has an ssh tunnel job
+
+macOS Local Network privacy blocks a launchd-started Python from reaching the LAN ("No route to host"),
+even with "Python" allowed in System Settings → Privacy & Security → Local Network; `/usr/bin/ssh`
+started by launchd is not blocked. So `make houston-install` also runs one job per rover,
+`local.missioncontrol.tunnel.<name>`: an ssh master that owns the connection. Houston's own ssh calls
+(mic, speaker) ride its ControlPath socket, and the camera reaches the rover app through its
+`-L 127.0.0.1:<tunnel_port>` forward. Its errors go to `~/Library/Logs/houston-tunnel.stderr.log`.
+
 ## Add a rover
 
 Add a `[[rover]]` block to `houston/rovers.toml` (`name`, `unit`, `ssh`, `app_url`, `app_user`,
-`password_file`, `voice`), put its voice WAV under `houston/voices/`, accept its host key once
+`password_file`, `voice`, and `tunnel_port` = 18000 + unit), put its voice WAV under `houston/voices/`, accept its host key once
 (`ssh <user@host> true`), then `make houston-install` (a `launchctl kickstart` alone would restart the old
 runtime copy, which never sees the edit). On the rover:
 

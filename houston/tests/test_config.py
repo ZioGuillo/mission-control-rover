@@ -32,6 +32,20 @@ def test_load(tmp_path):
     assert s.nasa_key_file == Path.home() / ".config/houston/nasa_key"
 
 
+def test_camera_url_without_tunnel_is_the_app(tmp_path):
+    f = tmp_path / "rovers.toml"
+    f.write_text(TOML)
+    assert load(f).rovers[0].camera_url == "http://h:8000"
+
+
+def test_camera_url_goes_through_the_tunnel(tmp_path):
+    f = tmp_path / "rovers.toml"
+    f.write_text(TOML.replace('voice = "voices/x.wav"', 'voice = "voices/x.wav"\ntunnel_port = 18002'))
+    r = load(f).rovers[0]
+    assert r.tunnel_port == 18002
+    assert r.camera_url == "http://127.0.0.1:18002"
+
+
 def test_shipped_config_loads():
     s = load(Path(__file__).parents[1] / "rovers.toml")
     assert s.rovers[0].name == "Fred"

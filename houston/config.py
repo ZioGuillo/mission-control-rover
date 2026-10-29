@@ -4,6 +4,7 @@ from __future__ import annotations
 import tomllib
 from dataclasses import dataclass, field, fields
 from pathlib import Path
+from urllib.parse import urlsplit
 
 DEFAULT_NASA_KEY_FILE = Path("~/.config/houston/nasa_key")
 
@@ -17,6 +18,18 @@ class Rover:
     app_user: str
     password_file: Path
     voice: Path
+    # macOS Local Network privacy blocks launchd-started Python from the LAN, but not /usr/bin/ssh.
+    # With a tunnel_port, install.sh runs an ssh master per rover forwarding this localhost port
+    # to the rover app, and the camera goes through it.
+    tunnel_port: int | None = None
+
+    @property
+    def camera_url(self) -> str:
+        """Where the camera fetches the app: the localhost tunnel when there is one."""
+        if self.tunnel_port is None:
+            return self.app_url
+        path = urlsplit(self.app_url).path
+        return f"http://127.0.0.1:{self.tunnel_port}{path}"
 
 
 @dataclass(frozen=True)

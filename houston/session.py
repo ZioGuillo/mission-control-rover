@@ -88,7 +88,7 @@ class RoverSession:
         self.rover, self.settings = rover, settings
         self.brain, self.voice, self.transcriber, self.clock = brain, voice, transcriber, clock
         self.link = link or RoverLink(rover.ssh)
-        self.camera = camera or AppCamera(rover.app_url, rover.app_user, rover.password_file)
+        self.camera = camera or AppCamera(rover.camera_url, rover.app_user, rover.password_file)
         self._beep = beep
         self._stop = threading.Event()
         self._sleep = sleep or self._stop.wait  # backoff wait; stop() cuts it short
