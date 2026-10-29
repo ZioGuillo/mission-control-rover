@@ -333,3 +333,10 @@ def test_vision_prompt_forbids_guessing_who_people_are():
     # Live: "veo a tu mamá sosteniéndote", "veo a la abuela contigo".
     text = prompts.vision("Bentley")
     assert "parentesco" in text and "quién" in text
+
+
+def test_prompt_forbids_numbers_not_in_the_sheet():
+    # Live: "la luz viaja a 199.792 km/s" and an invented Earth–Mars range.
+    text = prompts.system("Bentley", prompts.load_facts())
+    assert "299" in text  # speed of light is on the sheet
+    assert "aproximad" in text and "no estás seguro" in text

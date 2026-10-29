@@ -22,6 +22,8 @@ _VARIANTS = {
 # Rare words in Spanish speech: the name alone opening a sentence ("Bentley, ¿qué ves?") wakes too.
 # Not Fred/Eva — people are called that ("Eva, ven a comer").
 _STANDALONE = {"bentley"}
+# Spellings that count only after "hey/oye/hola": also people's names ("Wendy, ven a comer").
+_PREFIX_ONLY = {"bentley": ["wendy"]}  # Pablo's "Hey, Bentley" came out of Whisper as "Hey, Wendy."
 _PREFIX = r"hey|hei|hej|ey|ei|oye|hoy|jey|hay|ay|hola"  # "hoy": Whisper's spelling of "oye"
 _PAD = " \t,.!¡?¿:;"
 _PUNCT = r"[\s,.!¡?¿:;]*"
@@ -34,8 +36,10 @@ _PHANTOM = re.compile(
     r"^\W*(gracias por ver el video|suscr[ií]bete al canal|subt[ií]tulos.*)\W*$", re.I)
 
 
-def _name_pattern(name: str) -> str:
+def _name_pattern(name: str, prefixed: bool = False) -> str:
     variants = _VARIANTS.get(name.lower(), [name.lower()])
+    if prefixed:
+        variants = variants + _PREFIX_ONLY.get(name.lower(), [])
     return "(?:" + "|".join(re.escape(v) for v in variants) + ")"
 
 
@@ -44,7 +48,7 @@ def classify(text: str, name: str) -> Heard:
     n = _name_pattern(name)
 
     # Whisper sometimes adds an article: "Oye el Bentley".
-    wake = re.compile(rf"\b(?:{_PREFIX}){_PUNCT}(?:el\s+)?{n}\b{_PUNCT}", re.I)
+    wake = re.compile(rf"\b(?:{_PREFIX}){_PUNCT}(?:el\s+)?{_name_pattern(name, prefixed=True)}\b{_PUNCT}", re.I)
     m = wake.search(text)
     if not m and name.lower() in _STANDALONE:
         wake = re.compile(rf"^{_PUNCT}{n}\b{_PUNCT}", re.I)

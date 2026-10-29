@@ -854,8 +854,8 @@ def test_session_passes_the_rover_personality_to_the_brain():
     assert brain.personalities == ["Eres un Shiba Inu."]
 
 
-def test_filler_sound_replaces_the_second_filler():
-    # Bentley (a Shiba Inu) barks softly instead of saying "Recibido, consultando con la base…".
+def test_filler_sound_replaces_every_filler_line():
+    # Bentley (a Shiba Inu) only barks softly while he thinks — no "Mmm, déjame ver…" (Pablo, live test).
     filler_played = threading.Event()
 
     def on_write(pcm):
@@ -875,6 +875,6 @@ def test_filler_sound_replaces_the_second_filler():
     s.filler_after = 0.05
     s.handle(utter("Bentley, ¿qué es Marte?"))
     s.handle(utter("¿y la Luna?"))
-    assert s.link.speakers[0].tags() == ["<beep in>", "[Mmm, déjame ver…]", "[Uno.]", "<beep out>"]
+    assert s.link.speakers[0].tags() == ["<beep in>", "<barks>", "[Uno.]", "<beep out>"]
     assert s.link.speakers[1].tags() == ["<beep in>", "<barks>", "[Dos.]", "<beep out>"]
     assert loaded == [barks]  # loaded once, then served from memory

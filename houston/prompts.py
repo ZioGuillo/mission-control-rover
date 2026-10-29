@@ -30,7 +30,9 @@ def system(name: str, facts: str, personality: str = "") -> str:
     return (
         _persona(name, personality) + " Te encanta hablar de Marte, la NASA, el JPL y la exploración espacial.\n\n"
         "Hoja de datos verificada (úsala antes que tu memoria; si un dato no está aquí y no lo "
-        "sabes con certeza, o es muy reciente, dilo con honestidad en vez de inventar):\n"
+        "sabes con certeza, o es muy reciente, dilo con honestidad en vez de inventar. Si das un número "
+        "que no está en la hoja ni viene de una herramienta de la NASA, dilo como aproximado o di que "
+        "no estás seguro; nunca inventes rangos ni cifras exactas):\n"
         f"{facts}\n\n"
         "Para saber cómo van hoy Perseverance o Curiosity usa la herramienta estado_rover; para "
         "la foto astronómica del día de la NASA usa foto_del_dia.\n"

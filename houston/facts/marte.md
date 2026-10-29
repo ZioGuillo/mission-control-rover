@@ -28,3 +28,4 @@ Revisado por Pablo: pendiente
 - El JPL, Laboratorio de Propulsión a Chorro, está en el sur de California y fue fundado el 31 de octubre de 1936. [https://www.nasa.gov/centers-and-facilities/jpl/]
 - En el JPL trabajan más de 4.500 personas. [https://www.nasa.gov/centers-and-facilities/jpl/]
 - El JPL lidera las misiones de los rovers Curiosity y Perseverance, y sus misiones han visitado todos los planetas del sistema solar. [https://www.nasa.gov/centers-and-facilities/jpl/]
+- La luz viaja a unos 299.792 kilómetros por segundo en el vacío. [https://physics.nist.gov/cgi-bin/cuu/Value?c]

@@ -109,9 +109,8 @@ class RoverSession:
         self._load_sound = load_sound
         self._diag = Diag()
         self._sounds: dict[Path, bytes] = {}
-        # A rover with its own filler sound plays it instead of the second filler line.
-        self._fillers = itertools.cycle(
-            (FILLERS[0], rover.filler_sound) if rover.filler_sound else FILLERS)
+        # A rover with its own filler sound plays only that (Bentley barks; no "Mmm, déjame ver…").
+        self._fillers = itertools.cycle((rover.filler_sound,) if rover.filler_sound else FILLERS)
         self._cancel = threading.Event()
         self._others = [r.name for r in settings.rovers if r.name.lower() != rover.name.lower()]
 

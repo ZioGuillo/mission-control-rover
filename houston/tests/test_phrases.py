@@ -88,3 +88,10 @@ def test_benli_is_bentley(text):
 ])
 def test_commands_tolerate_a_leading_ok(text, kind):
     assert classify(text, "Bentley").kind == kind
+
+
+def test_hey_wendy_is_bentley_but_wendy_alone_is_a_person():
+    # Diagnostic 2026-10-29: Pablo's "Hey, Bentley" came out of Whisper as "Hey, Wendy."
+    assert classify("Hey, Wendy.", "Bentley").kind == "wake"
+    assert classify("Oye Wendy, ¿qué ves?", "Bentley").kind == "wake"
+    assert classify("Wendy, ven a comer", "Bentley").kind == "other"
