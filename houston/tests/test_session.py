@@ -479,7 +479,7 @@ def test_mic_frames_while_speaking_are_dropped():
     assert tr.calls == 1 and len(s.brain.calls) == 1
     # Fred's own voice comes back through the mic while (and just after) he speaks
     s.feed(speech(), t=clock())
-    clock.advance(0.3)
+    clock.advance(0.1)  # inside MUTE_MARGIN_S (echo tail)
     s.feed(speech())
     assert tr.calls == 1
     clock.advance(10)
@@ -766,7 +766,7 @@ def test_rovers_sharing_airtime_never_hear_each_other():
                 brain=FakeBrain(["Son 687 días."]))
     fred.handle(utter("Hey Fred, ¿cuántos días tiene un año en Marte?"))
     assert heard_during and set(heard_during) == {0}
-    clock.advance(0.3)  # just after Fred went quiet: still inside the margin
+    clock.advance(0.1)  # just after Fred went quiet: still inside the margin
     eva.feed(speech())
     assert eva_tr.calls == 0 and eva.brain.calls == []
     clock.advance(10)
@@ -830,3 +830,13 @@ def test_wake_question_logged_once(caplog):
     s.handle(utter("Gracias.", rms=3000))
     s.handle(utter("Hey Fred."))
     assert any(r.getMessage() == "Fred wake: (sin pregunta)" for r in caplog.records)
+
+
+def test_speech_right_after_the_rover_goes_quiet_is_heard():
+    # Live test 2026-10-29: "¿Cuántos vuelos hizo Ingenuity?" right after "¿Sí? Te escucho."
+    # lost its start and became "Carlos hizo Ingenuity" — the mic stayed deaf 0.5 s too long.
+    airtime = Airtime()
+    airtime.start()
+    airtime.stop(quiet_at=10.0)
+    assert airtime.busy(10.1)        # the speaker's own tail / room echo is still ignored
+    assert not airtime.busy(10.2)    # a person answering right away is heard

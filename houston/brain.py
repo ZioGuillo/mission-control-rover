@@ -170,7 +170,7 @@ class Brain:
     def _look(self, question: str, name: str, camera, stop: threading.Event) -> Iterator[str]:
         jpeg = camera.snapshot(timeout=_SNAPSHOT_TIMEOUT_S)  # CameraError -> FAILURE, no made-up scene
         splitter = Splitter()
-        for msg in self._stream({"model": self.settings.vlm, "think": False, "keep_alive": "10m", "messages": [
+        for msg in self._stream({"model": self.settings.vlm, "think": False, "keep_alive": _LLM_KEEP_ALIVE, "messages": [
                 {"role": "system", "content": prompts.vision(name)},
                 {"role": "user", "content": question, "images": [base64.b64encode(jpeg).decode()]}]},
                 stop):

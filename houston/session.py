@@ -31,7 +31,8 @@ CLOSE_MIN_RMS = 600.0      # a closing "gracias" must be at least this loud (pea
 CLOSE_FLOOR_RATIO = 3.0    # ...and this many times the room's noise floor (else: Whisper phantom)
 HISTORY_MESSAGES = 8
 FILLER_AFTER_S = 1.2       # no answer audio this long after the beep -> play a filler
-MUTE_MARGIN_S = 0.5        # keep the mic deaf this long after the rover goes quiet
+MUTE_MARGIN_S = 0.15       # keep the mic deaf this long after the rover goes quiet (echo tail only:
+                           # 0.5 s clipped people who answer right away — "Carlos" for "¿Cuántos vuelos")
 MIN_QUESTION_CHARS = 3     # "Hey Fred" plus less than this is just a wake
 MIN_FOLLOW_UP_WORDS = 2    # in a conversation, "Mmm." / "¿Qué?" is room noise, not a question
 PAUSED_MAX_S = 2.5         # while resting, only utterances this short go to Whisper ("Fred, despierta")

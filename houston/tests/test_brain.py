@@ -133,7 +133,7 @@ def test_mirar_tool_takes_photo_and_asks_vision_model(ollama):
     assert out == ["Veo a una persona.", "Está sonriendo."]
     assert cam.calls == 1
     vision = fake.bodies[1]
-    assert vision["model"] == "qwen3.8:27b" and vision["think"] is False and vision["keep_alive"] == "10m"
+    assert vision["model"] == "qwen3.8:27b" and vision["think"] is False and vision["keep_alive"] == -1
     user = vision["messages"][-1]
     assert user["content"] == "¿Quién está frente a ti?"
     assert base64.b64decode(user["images"][0]) == JPEG
