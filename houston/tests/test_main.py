@@ -148,3 +148,22 @@ def test_no_rovers_is_an_error(env, tmp_path):
     empty = tmp_path / "empty.toml"
     empty.write_text("[settings]\n")
     assert hmain.main(["--config", str(empty), "--log-file", str(log)], stop=threading.Event()) == 2
+
+
+def test_startup_failure_is_logged_and_returns_1(env, monkeypatch):
+    cfg, _, _, log = env
+
+    def boom(settings):
+        raise RuntimeError("no ollama")
+
+    monkeypatch.setattr(hmain, "Brain", boom)
+    assert hmain.main(["--config", str(cfg), "--log-file", str(log)], stop=threading.Event()) == 1
+    assert "no ollama" in log.read_text()
+
+
+def test_bad_config_is_logged_and_returns_1(env, tmp_path):
+    _, _, _, log = env
+    bad = tmp_path / "bad.toml"
+    bad.write_text("[[rover]\n")
+    assert hmain.main(["--config", str(bad), "--log-file", str(log)], stop=threading.Event()) == 1
+    assert "cannot load" in log.read_text()

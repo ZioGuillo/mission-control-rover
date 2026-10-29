@@ -9,7 +9,7 @@ runs locally; both servers bind 127.0.0.1 only.
 
 - Apple Silicon Mac with Homebrew: `ollama`, `whisper-cpp` (`/opt/homebrew/bin/whisper-server`), `ffmpeg`.
 - Whisper model at `~/Library/Caches/houston/ggml-large-v3-turbo.bin`.
-- Python 3.11 venv at `houston/.venv` with `houston/requirements.txt` installed.
+- `uv` (`brew install uv`); the installer builds the service's venv (Python 3.11) itself. For running tests by hand keep a `houston/.venv`.
 - Each rover's app password in the file named in `houston/rovers.toml` (for the camera).
 
 ## Install / uninstall
@@ -18,9 +18,18 @@ runs locally; both servers bind 127.0.0.1 only.
     make houston-uninstall    # houston/install.sh --uninstall
 
 The installer checks the requirements, starts Ollama (`brew services`), pulls the two models if missing,
-renders the launchd templates in `houston/launchd/` into `~/Library/LaunchAgents` and loads them:
+copies `houston/` (plus the two quindar beeps from `app/audio/`) to `~/Library/Application Support/houston/runtime/`
+(the repo lives in iCloud, where launchd jobs may be denied and files evicted), builds the venv at
+`~/Library/Application Support/houston/venv`, renders the launchd templates in `houston/launchd/` into
+`~/Library/LaunchAgents` and loads them:
 `local.missioncontrol.whisper` (whisper-server on 127.0.0.1:8178) and `local.missioncontrol.houston`
-(`python -m houston`). Both start at login and restart if they die. Uninstall removes only these two jobs.
+(`python -m houston`). Both start at login and restart if they crash (houston: not after a clean exit, 10 s throttle). **Code edits
+go live only after `make houston-install`** (it redeploys the runtime copy). Uninstall removes only the two jobs;
+`houston/install.sh --uninstall --purge` also deletes the runtime copy and venv. `install.sh --render-only DIR`
+just renders the plists into DIR for inspection.
+
+SSH runs with `BatchMode=yes` and never prompts: each rover's key must work without a passphrase prompt
+(unencrypted key, or loaded in the agent/keychain available to the launchd job).
 
 Run by hand (stop the launchd job first, the mic is single-owner): `houston/.venv/bin/python -m houston`.
 A crashed rover session is logged and restarted after 5 s; the others keep running.
@@ -30,7 +39,7 @@ A crashed rover session is logged and restarted after 5 s; the others keep runni
     make houston-logs         # tail -f ~/Library/Logs/houston.log
 
 `houston.log` rotates at 5 MB (3 backups). Crashes outside Python land in `~/Library/Logs/houston.stderr.log`
-and `whisper.stderr.log`.
+and `whisper.stderr.log` (houston's stdout is discarded; nothing prints transcripts).
 
 ## Voice commands
 

@@ -6,12 +6,12 @@
     <string>local.missioncontrol.houston</string>
     <key>ProgramArguments</key>
     <array>
-        <string>@REPO@/houston/.venv/bin/python</string>
+        <string>@VENV@/bin/python</string>
         <string>-m</string>
         <string>houston</string>
     </array>
     <key>WorkingDirectory</key>
-    <string>@REPO@</string>
+    <string>@RUNTIME@</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
@@ -20,9 +20,14 @@
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
-    <true/>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
     <key>StandardOutPath</key>
-    <string>@HOME@/Library/Logs/houston.stderr.log</string>
+    <string>/dev/null</string>
     <key>StandardErrorPath</key>
     <string>@HOME@/Library/Logs/houston.stderr.log</string>
 </dict>

@@ -8,7 +8,7 @@ from typing import Callable
 
 _CARD = re.compile(r"^card \d+: (\S+) \[[^\]]*\], (.+)$")
 _SSH_OPTS = ["ControlMaster=auto", "ControlPath=~/.ssh/houston-%C", "ControlPersist=10m",
-             "ServerAliveInterval=5", "ConnectTimeout=5"]
+             "ServerAliveInterval=5", "ConnectTimeout=5", "BatchMode=yes"]
 _BUSY = "Device or resource busy"
 _START_CHECK_S = 0.3     # aplay that is going to fail has exited by now
 _POLL_S = 0.05

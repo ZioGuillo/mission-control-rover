@@ -28,7 +28,8 @@ def test_ssh_args_has_control_master_options():
     assert args[0] == "ssh" and args[-1] == "ec2-user@rover"
     joined = " ".join(args)
     for opt in ("ControlMaster=auto", "ControlPath=~/.ssh/houston-%C",
-                "ControlPersist=10m", "ServerAliveInterval=5", "ConnectTimeout=5"):
+                "ControlPersist=10m", "ServerAliveInterval=5", "ConnectTimeout=5",
+                "BatchMode=yes"):
         assert f"-o {opt}" in joined
 
 

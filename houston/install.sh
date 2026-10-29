@@ -1,48 +1,109 @@
 #!/usr/bin/env bash
-# Install (or --uninstall) the Houston launchd services: whisper-server + houston.
+# Install Houston as launchd services (whisper-server + houston), run from a copy OUTSIDE iCloud.
+#   install.sh                     deploy runtime copy + venv, (re)load both jobs
+#   install.sh --uninstall [--purge]   remove the jobs (--purge also removes the runtime copy and venv)
+#   install.sh --render-only DIR   only render the two plists into DIR (no checks, nothing installed)
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(dirname "$HERE")"
+SUPPORT="$HOME/Library/Application Support/houston"
+RUNTIME="$SUPPORT/runtime"
+VENV="$SUPPORT/venv"
 AGENTS="$HOME/Library/LaunchAgents"
 MODEL="$HOME/Library/Caches/houston/ggml-large-v3-turbo.bin"
 LABELS=(local.missioncontrol.whisper local.missioncontrol.houston)
 DOMAIN="gui/$(id -u)"
+
+die() { echo "error: $*" >&2; exit 1; }
+
+# render_plists DIR: fill the templates with python's plistlib (safe for any characters in paths).
+render_plists() {
+    python3 - "$HERE/launchd" "$1" "$RUNTIME" "$VENV" "$HOME" <<'PY'
+import plistlib, sys
+src, dst, runtime, venv, home = sys.argv[1:]
+subs = {"@RUNTIME@": runtime, "@VENV@": venv, "@HOME@": home}
+
+def fill(v):
+    if isinstance(v, str):
+        for k, r in subs.items():
+            v = v.replace(k, r)
+        return v
+    if isinstance(v, list):
+        return [fill(x) for x in v]
+    if isinstance(v, dict):
+        return {k: fill(x) for k, x in v.items()}
+    return v
+
+for label in ("local.missioncontrol.whisper", "local.missioncontrol.houston"):
+    with open(f"{src}/{label}.plist", "rb") as f:
+        data = fill(plistlib.load(f))
+    with open(f"{dst}/{label}.plist", "wb") as f:
+        plistlib.dump(data, f)
+PY
+}
+
+if [[ "${1:-}" == "--render-only" ]]; then
+    [[ -d "${2:-}" ]] || die "usage: install.sh --render-only DIR"
+    render_plists "$2"
+    exit 0
+fi
 
 if [[ "${1:-}" == "--uninstall" ]]; then
     for label in "${LABELS[@]}"; do
         launchctl bootout "$DOMAIN/$label" 2>/dev/null || true
         rm -f "$AGENTS/$label.plist"
     done
+    if [[ "${2:-}" == "--purge" ]]; then
+        rm -rf "$RUNTIME" "$VENV"
+        echo "Runtime copy and venv removed."
+    fi
     echo "Houston services removed (ollama and the models are left alone)."
     exit 0
 fi
 
-die() { echo "error: $*" >&2; exit 1; }
-
+command -v brew >/dev/null || die "brew not found (https://brew.sh)"
 command -v ollama >/dev/null || die "ollama not found (brew install ollama)"
 [[ -x /opt/homebrew/bin/whisper-server ]] || die "whisper-server not found (brew install whisper-cpp)"
 command -v ffmpeg >/dev/null || die "ffmpeg not found (brew install ffmpeg)"
+command -v uv >/dev/null || die "uv not found (brew install uv)"
 [[ -f "$MODEL" ]] || die "whisper model missing: $MODEL"
-[[ -x "$HERE/.venv/bin/python" ]] || die "houston/.venv missing (see houston/README.md)"
 
 # Ollama stays on its default, localhost only: never set OLLAMA_HOST.
 brew services start ollama
+ready=
 for _ in $(seq 1 30); do
-    ollama list >/dev/null 2>&1 && break
+    if ollama list >/dev/null 2>&1; then ready=1; break; fi
     sleep 1
 done
+[[ -n "$ready" ]] || die "ollama did not come up within 30 s"
 installed="$(ollama list)"
 for model in gpt-oss:120b qwen3.8:27b; do
     grep -q "^$model[[:space:]]" <<<"$installed" || ollama pull "$model"
 done
 
-mkdir -p "$AGENTS" "$HOME/Library/Logs"
+# Runtime copy outside iCloud (LaunchAgents may be denied there, and iCloud can evict files).
+mkdir -p "$RUNTIME/houston" "$RUNTIME/app/audio" "$HOME/Library/Logs" "$AGENTS"
+rsync -a --delete --exclude .venv --exclude tests --exclude __pycache__ \
+    "$HERE/" "$RUNTIME/houston/"
+rsync -a "$REPO/app/audio/quindar_in.wav" "$REPO/app/audio/quindar_out.wav" "$RUNTIME/app/audio/"
+[[ -x "$VENV/bin/python" ]] || uv venv --python 3.11 "$VENV"
+uv pip install --python "$VENV/bin/python" -r "$HERE/requirements.txt"
+
+render_plists "$AGENTS"
 for label in "${LABELS[@]}"; do
-    sed -e "s|@REPO@|$REPO|g" -e "s|@HOME@|$HOME|g" \
-        "$HERE/launchd/$label.plist" > "$AGENTS/$label.plist"
     plutil -lint "$AGENTS/$label.plist" >/dev/null
     launchctl bootout "$DOMAIN/$label" 2>/dev/null || true
-    launchctl bootstrap "$DOMAIN" "$AGENTS/$label.plist"
+    # bootout is asynchronous: wait until the job is really gone, or bootstrap fails with I/O error 5.
+    for _ in $(seq 1 10); do
+        launchctl print "$DOMAIN/$label" >/dev/null 2>&1 || break
+        sleep 1
+    done
+    for attempt in 1 2 3 4 5; do
+        launchctl bootstrap "$DOMAIN" "$AGENTS/$label.plist" && break
+        [[ $attempt -lt 5 ]] || die "launchctl bootstrap failed for $label"
+        sleep 1
+    done
 done
-echo "Houston installed. Logs: ~/Library/Logs/houston.log"
+echo "Houston installed. Code edits go live after re-running: make houston-install"
+echo "Logs: ~/Library/Logs/houston.log"

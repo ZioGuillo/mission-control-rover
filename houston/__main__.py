@@ -6,6 +6,7 @@ import logging
 import signal
 import sys
 import threading
+import time
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -20,7 +21,7 @@ log = logging.getLogger("houston")
 DEFAULT_CONFIG = Path(__file__).resolve().parent / "rovers.toml"
 DEFAULT_LOG = Path("~/Library/Logs/houston.log").expanduser()
 RESTART_DELAY_S = 5.0
-JOIN_S = 10.0
+JOIN_S = 10.0  # one shared deadline for all session joins
 
 
 def _setup_logging(path: Path) -> RotatingFileHandler:
@@ -72,7 +73,11 @@ def main(argv: list[str] | None = None, *, stop: threading.Event | None = None,
     own_signals = stop is None
     stop = stop or threading.Event()
     try:
-        settings = config.load(args.config)
+        try:
+            settings = config.load(args.config)
+        except Exception:
+            log.exception("cannot load %s", args.config)
+            return 1
         if not settings.rovers:
             log.error("no rovers in %s", args.config)
             return 2
@@ -81,8 +86,12 @@ def main(argv: list[str] | None = None, *, stop: threading.Event | None = None,
                 signal.signal(sig, lambda *_: stop.set())
 
         log.info("houston starting: %s", ", ".join(r.name for r in settings.rovers))
-        brain, voice = Brain(settings), Voice()
-        transcriber = Transcriber(settings.whisper_url)
+        try:
+            brain, voice = Brain(settings), Voice()
+            transcriber = Transcriber(settings.whisper_url)
+        except Exception:
+            log.exception("startup failed")
+            return 1
         threading.Thread(target=_preload, args=(voice, settings.rovers[0].voice),
                          name="houston-preload", daemon=True).start()
 
@@ -100,8 +109,9 @@ def main(argv: list[str] | None = None, *, stop: threading.Event | None = None,
         log.info("houston stopping")
         for s in list(sessions.values()):
             s.stop()
+        deadline = time.monotonic() + JOIN_S
         for t in threads:
-            t.join(JOIN_S)
+            t.join(max(0.0, deadline - time.monotonic()))
         return 0
     finally:
         logging.getLogger().removeHandler(handler)
