@@ -190,16 +190,18 @@ def test_foto_del_dia_uses_key_file(ollama, monkeypatch, tmp_path):
     assert out == ["Hoy es Jezero."] and keys == ["k-123"]
 
 
-def test_nasa_error_goes_back_to_model(ollama, monkeypatch):
+def test_nasa_error_is_said_plainly_never_handed_to_the_model(ollama, monkeypatch):
+    # Live 2026-10-29: APOD timed out, the error went back to gpt-oss, and it invented
+    # "La Nube del Ocaso… del 28 de octubre de 2027". A failed lookup must not become a story.
     def boom(rover):
         raise nasa.NasaError("HTTP 503")
 
     monkeypatch.setattr(nasa, "rover_status", boom)
     fake = ollama([call("estado_rover", rover="curiosity"), DONE],
-                  [say("No pude contactar a la NASA. "), DONE])
+                  [say("Curiosity encontró oro ayer. "), DONE])
     out = list(brain_for(fake.url).answer(ask("¿Cómo va Curiosity?"), "Fred", FakeCamera()))
-    assert out == ["No pude contactar a la NASA."]
-    assert "error" in json.loads(fake.bodies[1]["messages"][-1]["content"])
+    assert out == [Brain.NASA_DOWN]
+    assert len(fake.bodies) == 1  # gpt-oss never got a chance to improvise
 
 
 def test_tool_loop_is_capped(ollama, monkeypatch):
@@ -325,3 +327,9 @@ def test_personality_goes_into_both_prompts(ollama):
     assert shiba in fake.bodies[0]["messages"][0]["content"]
     assert "Bentley" in fake.bodies[0]["messages"][0]["content"]
     assert shiba in fake.bodies[1]["messages"][0]["content"]  # the vision prompt too
+
+
+def test_vision_prompt_forbids_guessing_who_people_are():
+    # Live: "veo a tu mamá sosteniéndote", "veo a la abuela contigo".
+    text = prompts.vision("Bentley")
+    assert "parentesco" in text and "quién" in text

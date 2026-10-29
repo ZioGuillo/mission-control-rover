@@ -25,6 +25,8 @@ _STANDALONE = {"bentley"}
 _PREFIX = r"hey|hei|hej|ey|ei|oye|hoy|jey|hay|ay|hola"  # "hoy": Whisper's spelling of "oye"
 _PAD = " \t,.!¡?¿:;"
 _PUNCT = r"[\s,.!¡?¿:;]*"
+# A filler word may open a command: "Ok, Bentley, descansa", "Bueno, gracias".
+_LEAD = rf"(?:(?:ok|okay|bueno|ya|oye|hey){_PUNCT})?"
 
 # Whisper's stock hallucinations on silence/noise (YouTube outros in its training data).
 # Plain "gracias" is deliberately absent: the close rule needs it.
@@ -53,12 +55,12 @@ def classify(text: str, name: str) -> Heard:
         return Heard("wake", rest)
 
     close = re.compile(
-        rf"^{_PUNCT}(?:muchas\s+)?(?:gracias|thanks|thank you)(?:{_PUNCT}{n})?{_PUNCT}$", re.I)
+        rf"^{_PUNCT}{_LEAD}(?:muchas\s+)?(?:gracias|thanks|thank you)(?:{_PUNCT}{n})?{_PUNCT}$", re.I)
     if close.match(text):
         return Heard("close", "")
 
     for kind, word in (("pause", "descansa"), ("resume", "despierta")):
-        cmd = re.compile(rf"^{_PUNCT}(?:{n}{_PUNCT}{word}|{word}{_PUNCT}{n}){_PUNCT}$", re.I)
+        cmd = re.compile(rf"^{_PUNCT}{_LEAD}(?:{n}{_PUNCT}{word}|{word}{_PUNCT}{n}){_PUNCT}$", re.I)
         if cmd.match(text):
             return Heard(kind, "")
 

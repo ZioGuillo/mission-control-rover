@@ -61,6 +61,9 @@ class BrainError(Exception):
 
 class Brain:
     FAILURE = "Base, tengo una falla en mis sistemas. Intenta de nuevo."
+    # Said as-is when a NASA lookup fails: the error never goes back to the model, which once
+    # turned an APOD timeout into an invented "photo of 28 October 2027".
+    NASA_DOWN = "No pude comunicarme con la NASA ahora mismo. Intenta en un rato."
     DEADLINE_S = 30.0  # a whole answer, first byte to last sentence
 
     def __init__(self, settings: Settings):
@@ -149,13 +152,16 @@ class Brain:
             messages.append({"role": "assistant", "content": content, "thinking": thinking, "tool_calls": calls})
             for call in calls:
                 tool, result = self._run_tool(call.get("function") or {})
+                if tool in _NASA_TOOLS and "error" in result:
+                    yield self.NASA_DOWN
+                    return
                 messages.append({"role": "tool", "tool_name": tool, "content": json.dumps(result, ensure_ascii=False)})
                 if tool in _NASA_TOOLS:
                     think = "low"  # answering from NASA data, not reasoning
         raise BrainError(f"still calling tools after {MAX_TOOL_ROUNDS} rounds")
 
     def _run_tool(self, fn: dict) -> tuple[str, dict]:
-        """NASA tool result, or {"error": ...} for the model to explain (one honest sentence)."""
+        """NASA tool result, or {"error": ...}: a NASA error is spoken as NASA_DOWN, never improvised on."""
         name, args = fn.get("name", ""), fn.get("arguments") or {}
         try:
             if name == "estado_rover":

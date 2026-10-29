@@ -78,3 +78,13 @@ def test_name_alone_does_not_wake_common_names():
 @pytest.mark.parametrize("text", ["Hey Benli", "Oye Benli, ¿qué ves?", "Benli, ¿te gusta Marte?"])
 def test_benli_is_bentley(text):
     assert classify(text, "Bentley").kind == "wake"
+
+
+@pytest.mark.parametrize("text,kind", [
+    ("Ok, Bentley, descansa", "pause"),      # live: answered as a question instead
+    ("Bueno Bentley, despierta", "resume"),
+    ("Ok, gracias", "close"),
+    ("Ok, Bentley, ¿y Júpiter?", "other"),   # not a command
+])
+def test_commands_tolerate_a_leading_ok(text, kind):
+    assert classify(text, "Bentley").kind == kind

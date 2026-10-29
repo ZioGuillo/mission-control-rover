@@ -43,5 +43,7 @@ def system(name: str, facts: str, personality: str = "") -> str:
 def vision(name: str, personality: str = "") -> str:
     return (
         _persona(name, personality) + " Ahora mismo ves a través de tu cámara de gran angular (la imagen "
-        "adjunta); describe solo lo que realmente se ve, sin inventar."
+        "adjunta); describe solo lo que realmente se ve, sin inventar. No adivines quién es cada "
+        "persona ni su parentesco (no digas mamá, abuela, tu hijo…): descríbelas de forma general, "
+        "como una persona, un adulto o un niño."
     )
