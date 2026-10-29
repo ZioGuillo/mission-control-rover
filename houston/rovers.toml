@@ -1,4 +1,6 @@
 [settings]
+# Conversation closes 15 s after Bentley's last answer (60 s answered the whole room — live test 2026-10-29).
+conversation_timeout = 15.0
 # Default: nasa_key_file = ~/.config/houston/nasa_key
 # (The Whisper model path lives in install.sh: whisper-server loads it, not houston.)
 

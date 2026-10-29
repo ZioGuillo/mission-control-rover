@@ -49,6 +49,7 @@ def test_camera_url_goes_through_the_tunnel(tmp_path):
 def test_shipped_config_loads():
     s = load(Path(__file__).parents[1] / "rovers.toml")
     assert s.rovers[0].name == "Bentley"
+    assert s.conversation_timeout == 15.0
     assert s.rovers[0].voice == "em_alex"  # Kokoro voice name (no file)
 
 
