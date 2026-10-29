@@ -385,12 +385,14 @@ def test_sigue_continues_the_demo_only_right_after_one():
                                {"role": "assistant", "content": "Dos."}, {"role": "user", "content": "Sigue"}])
 
 
-def test_demo_prompt_gives_the_talk_in_first_person():
-    # Live 2026-10-29: asked for a demo, Bentley commented on the talk instead of giving it.
+def test_demo_prompt_has_bentley_give_the_talk_himself():
+    # Live 2026-10-29: asked for a demo, Bentley commented on the talk instead of giving it;
+    # Pablo wants Bentley on stage as Bentley, telling Pablo's stories, not impersonating him.
     facts = prompts.load_facts()
     normal, demo = prompts.system("Bentley", facts), prompts.system("Bentley", facts, demo=True)
     assert "dos frases" in normal and "dos frases" not in demo
-    assert "primera persona" in demo and "nunca narres" in demo and "primera persona" not in normal
+    assert "siendo tú mismo" in demo and "tercera persona" in demo and "nunca comentes" in demo
+    assert "Tú no eres Pablo" in demo and "escenario" not in normal
 
 
 def test_demo_gets_the_demo_prompt_and_a_longer_deadline(ollama):
@@ -403,4 +405,4 @@ def test_demo_gets_the_demo_prompt_and_a_longer_deadline(ollama):
     time.sleep(0.5)  # past the normal deadline, still within the demo's
     hold.set()
     assert list(out) == ["Me llamo Pablo."]
-    assert "primera persona" in fake.bodies[0]["messages"][0]["content"]
+    assert "siendo tú mismo" in fake.bodies[0]["messages"][0]["content"]

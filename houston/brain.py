@@ -149,7 +149,8 @@ class Brain:
         if LOOK.search(question):
             yield from self._look(question, name, camera, personality, stop)
             return
-        messages = [{"role": "system", "content": prompts.system(name, self.facts, personality, is_demo(history))}]
+        demo = is_demo(history)
+        messages = [{"role": "system", "content": prompts.system(name, self.facts, personality, demo)}]
         messages += [dict(m) for m in history[-HISTORY_TURNS:]]
         think = self.settings.think
         for _ in range(MAX_TOOL_ROUNDS + 1):
