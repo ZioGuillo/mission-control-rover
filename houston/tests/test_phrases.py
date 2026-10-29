@@ -73,3 +73,8 @@ def test_name_alone_does_not_wake_common_names():
     assert classify("Eva, ven a comer", "Eva").kind == "other"
     assert classify("Fred, pásame eso", "Fred").kind == "other"
     assert classify("Le dije a Bentley que sí", "Bentley").kind == "other"
+
+
+@pytest.mark.parametrize("text", ["Hey Benli", "Oye Benli, ¿qué ves?", "Benli, ¿te gusta Marte?"])
+def test_benli_is_bentley(text):
+    assert classify(text, "Bentley").kind == "wake"

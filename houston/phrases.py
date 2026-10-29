@@ -16,7 +16,8 @@ class Heard(NamedTuple):
 _VARIANTS = {
     "fred": ["fred", "fret", "frey", "freddy", "fredi"],
     "eva": ["eva", "heva", "iva"],
-    "bentley": ["bentley", "bently", "benley", "bentli", "bentlee", "ventley", "bendley", "vently"],
+    "bentley": ["bentley", "bently", "benley", "bentli", "bentlee", "ventley", "bendley", "vently",
+                "benli", "benlee", "venli"],  # Pablo also says "Benli"
 }
 # Rare words in Spanish speech: the name alone opening a sentence ("Bentley, ¿qué ves?") wakes too.
 # Not Fred/Eva — people are called that ("Eva, ven a comer").

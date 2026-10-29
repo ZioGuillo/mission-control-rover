@@ -17,6 +17,7 @@ from typing import Callable
 
 from houston import voice as voice_mod
 from houston.brain import Brain
+from houston.diag import Diag
 from houston.camera import AppCamera
 from houston.config import Rover, Settings
 from houston.phrases import Heard, classify, is_phantom
@@ -106,6 +107,7 @@ class RoverSession:
         self._got_audio = False  # this connection delivered mic data (resets the backoff)
         self._fixed: dict[str, bytes] = {}
         self._load_sound = load_sound
+        self._diag = Diag()
         self._sounds: dict[Path, bytes] = {}
         # A rover with its own filler sound plays it instead of the second filler line.
         self._fillers = itertools.cycle(
@@ -160,6 +162,7 @@ class RoverSession:
         if not text or is_phantom(text):
             return
         heard = self._command(classify(text, self.name))
+        self._diag.record(self.name, u.seconds, text, heard.kind)  # off unless a window is open
         state = self.state
 
         if state == PAUSED:
