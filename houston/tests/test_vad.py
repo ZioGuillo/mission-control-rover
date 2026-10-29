@@ -49,7 +49,8 @@ def test_short_silence_does_not_end_utterance():
 
 
 def test_continuous_tone_cut_at_max():
-    out = run(noise(1) + tone(20))
+    # speech-like: short pauses (under end_silence) so quiet frames exist
+    out = run(noise(1) + (tone(0.7) + noise(0.3)) * 20)
     assert out and 14.9 < out[0].seconds <= 15.05
 
 
@@ -78,16 +79,41 @@ def test_any_chunking_gives_identical_result():
 
 def test_noise_floor_property_and_reset():
     seg = Segmenter()
-    assert seg.noise_floor == 0.0
-    seg.feed(noise(1))
-    assert 15 < seg.noise_floor < 40
+    assert seg.noise_floor == 50.0
+    seg.feed(noise(5))
+    assert 23 < seg.noise_floor < 35
     seg.reset()
-    assert seg.noise_floor == 0.0
+    assert seg.noise_floor == 50.0
 
 
 def test_floor_frozen_while_speaking():
     seg = Segmenter()
-    seg.feed(noise(1))
+    seg.feed(noise(3))
     before = seg.noise_floor
     seg.feed(tone(1))
-    assert seg.noise_floor < before * 3
+    assert seg.noise_floor < before * 1.5
+
+
+def test_speech_at_stream_start_is_heard():
+    assert len(run(tone(1.5) + noise(2) + tone(1.5) + noise(1))) == 2
+
+
+def test_speech_right_after_reset_is_heard():
+    seg = Segmenter()
+    seg.feed(noise(2))
+    seg.reset()
+    sig = tone(1.5) + noise(2) + tone(1.5) + noise(1)
+    out = [u for i in range(0, len(sig), 3200) for u in seg.feed(sig[i:i + 3200])]
+    assert len(out) == 2
+
+
+def test_sustained_noise_step_is_absorbed():
+    seg = Segmenter()
+    sig = noise(2) + noise(60, 400, seed=2)
+    out = [u for i in range(0, len(sig), 3200) for u in seg.feed(sig[i:i + 3200])]
+    assert out == []
+    assert seg.noise_floor >= 150  # amplitude-400 uniform noise has RMS ~231
+
+
+def test_short_pause_inside_speech_stays_one_utterance():
+    assert len(run(noise(1) + tone(1) + noise(0.3) + tone(1) + noise(1))) == 1

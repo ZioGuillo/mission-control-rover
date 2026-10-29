@@ -12,6 +12,8 @@ _FLOOR_RATIO = 3.0       # voiced = louder than this multiple of the noise floor
 _FLOOR_DECAY = 0.995     # noise-floor EMA weight on the old value
 _ONSET_FRAMES = 3        # consecutive voiced frames that start an utterance
 _PREROLL_FRAMES = 10     # quiet frames kept before the onset
+_SEED_FLOOR = _MIN_THRESHOLD / _FLOOR_RATIO  # start/reset value of the noise floor
+_STUCK_RATIO = 2.0       # a max-length clip whose quiet frames beat floor*this is noise
 _TAIL_FRAMES = 7         # trailing quiet frames kept after the last speech
 
 
@@ -43,15 +45,16 @@ class Segmenter:
 
     @property
     def noise_floor(self) -> float:
-        return self._floor or 0.0
+        return self._floor
 
     def reset(self) -> None:
         self._pending = bytearray()
-        self._floor: float | None = None
+        self._floor = _SEED_FLOOR
         self._speaking = False
         self._voiced = 0
         self._quiet = 0
         self._peak = 0.0
+        self._rmss: list[float] = []
         self._lead = 0
         self._buf = bytearray()
         # onset frames are part of the ring, so keep quiet pre-roll plus the onset
@@ -71,11 +74,9 @@ class Segmenter:
 
     def _frame(self, frame: bytes) -> Utterance | None:
         e = _rms(frame)
-        if self._floor is None:
-            self._floor = e
-        elif not self._speaking:
-            self._floor = self._floor * _FLOOR_DECAY + e * (1 - _FLOOR_DECAY)
         thr = max(self._floor * _FLOOR_RATIO, _MIN_THRESHOLD)
+        if e <= thr:  # speech never drags the floor up
+            self._floor = self._floor * _FLOOR_DECAY + e * (1 - _FLOOR_DECAY)
 
         if not self._speaking:
             self._pre.append((frame, e))
@@ -85,13 +86,24 @@ class Segmenter:
                 self._lead = (len(self._pre) - _ONSET_FRAMES) * self._frame_bytes
                 self._buf = bytearray(b"".join(f for f, _ in self._pre))
                 self._peak = max(r for _, r in self._pre)
+                self._rmss = [r for _, r in self._pre]
             return None
 
         n = self._frame_bytes
         self._buf += frame
         self._peak = max(self._peak, e)
+        self._rmss.append(e)
         self._quiet = self._quiet + 1 if e < thr else 0
-        if self._quiet >= self._end_frames or len(self._buf) >= self._max_bytes:
+        cut = len(self._buf) >= self._max_bytes
+        if cut and self._quiet < self._end_frames:
+            quiet_level = sorted(self._rmss)[len(self._rmss) // 5]
+            if quiet_level > self._floor * _STUCK_RATIO:
+                # even its quietest frames are loud: the noise rose, not speech
+                self._floor = quiet_level
+                self._speaking, self._voiced, self._buf = False, 0, bytearray()
+                self._pre.clear()
+                return None
+        if self._quiet >= self._end_frames or cut:
             # min_seconds counts speech only, not pre-roll or the trailing silence
             speech = len(self._buf) - self._lead - self._quiet * n
             drop = max(0, self._quiet - _TAIL_FRAMES) * n
