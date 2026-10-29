@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from houston import nasa, prompts
-from houston.brain import Brain
+from houston.brain import LOOK, Brain
 from houston.camera import CameraError
 from houston.config import Settings
 from houston.tests import fakehttp
@@ -246,3 +246,30 @@ def test_fact_sheet_loads_without_urls_or_header():
     assert "Revisado por Pablo" not in facts and "http" not in facts
     assert "687" in facts and "72" in facts
     assert 15 <= len(facts.splitlines()) <= 30
+
+
+@pytest.mark.parametrize("question", [
+    "¿Qué ves?", "¿qué estás viendo?", "¿Puedes ver algo?", "Mírame, Fred", "¿Qué hay frente a ti?"])
+def test_look_catches_deictic_camera_questions(question):
+    assert LOOK.search(question)
+
+
+@pytest.mark.parametrize("question", [
+    "¿Cuánto tarda Marte en dar la vuelta alrededor del Sol?",
+    "Mira, Fred, ¿cuántas lunas tiene Marte?",
+    "¿Qué cámara tiene Perseverance?",
+    "¿Cómo ves el futuro de la exploración de Marte?",
+    "¿A veces ves estrellas?",
+    "¿Qué hay frente a tierra firme?", "¿Qué vestido usaban los astronautas?"])
+def test_look_leaves_talk_questions_to_gpt_oss(question):
+    assert not LOOK.search(question)
+
+
+def test_tool_round_echoes_thinking_but_never_speaks_it(ollama, monkeypatch):
+    monkeypatch.setattr(nasa, "rover_status", lambda rover: {"sol": 5057})
+    fake = ollama([think("Necesito datos. "), think("Llamo la herramienta."), call("estado_rover", rover="curiosity"), DONE],
+                  [think("Ya tengo el sol."), say("Va en el sol cinco mil cincuenta y siete. "), DONE])
+    out = list(brain_for(fake.url).answer(ask("¿Cómo va Curiosity?"), "Fred", FakeCamera()))
+    assert out == ["Va en el sol cinco mil cincuenta y siete."]
+    echoed = fake.bodies[1]["messages"][-2]
+    assert echoed["role"] == "assistant" and echoed["thinking"] == "Necesito datos. Llamo la herramienta."

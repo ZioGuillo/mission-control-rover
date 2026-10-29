@@ -24,9 +24,10 @@ MAX_TOOL_ROUNDS = 3
 _TIMEOUT_S = 120.0  # per socket read: a cold 120b load can take a while to send its first byte
 _SNAPSHOT_TIMEOUT_S = 6.0
 
+# Only deictic "look at this" forms: "alrededor del Sol", "¿qué cámara tiene...?" are talk questions.
 LOOK = re.compile(
-    r"\b((puedes|alcanzas a) ver|ves|veas|viendo|m[ií]ra(me|lo|la|nos)?|miras|mirando|c[aá]mara|"
-    r"delante de ti|frente a ti|enfrente|alrededor|qu[eé] hay (aqu[ií]|ah[ií]|all[aá]|frente|delante))\b",
+    r"\b(qu[eé] (ves|est[aá]s viendo)|(puedes|alcanzas a) ver|m[ií]ra(me|nos)|"
+    r"(frente a|delante de|enfrente de) ti|qu[eé] hay (aqu[ií]|ah[ií]|all[aá]|frente a ti|delante de ti))\b",
     re.I)
 
 
@@ -79,11 +80,12 @@ class Brain:
         messages += [dict(m) for m in history[-HISTORY_TURNS:]]
         think = "medium"
         for _ in range(MAX_TOOL_ROUNDS + 1):
-            splitter, content, calls = Splitter(), "", []
+            splitter, content, thinking, calls = Splitter(), "", "", []
             for msg in self._stream({"model": self.settings.llm, "think": think, "tools": TOOLS,
                                      "keep_alive": "24h", "messages": messages}):
                 calls += msg.get("tool_calls") or []
                 content += msg.get("content") or ""
+                thinking += msg.get("thinking") or ""  # echoed back to the model, never spoken
                 yield from splitter.push(msg.get("content") or "")
             yield from splitter.flush()
             if not calls:
@@ -93,7 +95,7 @@ class Brain:
                 if fn.get("name") == "mirar":
                     yield from self._look((fn.get("arguments") or {}).get("pregunta") or question, name, camera)
                     return
-            messages.append({"role": "assistant", "content": content, "tool_calls": calls})
+            messages.append({"role": "assistant", "content": content, "thinking": thinking, "tool_calls": calls})
             for call in calls:
                 tool, result = self._run_tool(call.get("function") or {})
                 messages.append({"role": "tool", "tool_name": tool, "content": json.dumps(result, ensure_ascii=False)})
