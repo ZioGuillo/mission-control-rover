@@ -55,3 +55,21 @@ def test_bentley_wakes(text, rest):
 
 def test_bentley_does_not_wake_on_fred():
     assert classify("Hey Fred, ¿qué ves?", "Bentley").kind == "other"
+
+
+@pytest.mark.parametrize("text,rest", [
+    ("Oye el Bentley.", ""),                       # Whisper adds an article
+    ("Hoy el Bentley, ¿qué ves?", "qué ves"),
+    ("Bentley, ¿te gusta Marte?", "te gusta Marte"),  # the name alone opening the sentence
+    ("Bently, ¿qué hora es?", "qué hora es"),
+])
+def test_bentley_wake_tolerates_whisper_spellings(text, rest):
+    heard = classify(text, "Bentley")
+    assert heard.kind == "wake" and heard.rest == rest
+
+
+def test_name_alone_does_not_wake_common_names():
+    # "Eva" is also a person's name: only rare rover names wake without a greeting.
+    assert classify("Eva, ven a comer", "Eva").kind == "other"
+    assert classify("Fred, pásame eso", "Fred").kind == "other"
+    assert classify("Le dije a Bentley que sí", "Bentley").kind == "other"

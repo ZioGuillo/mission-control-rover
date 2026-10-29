@@ -16,9 +16,12 @@ class Heard(NamedTuple):
 _VARIANTS = {
     "fred": ["fred", "fret", "frey", "freddy", "fredi"],
     "eva": ["eva", "heva", "iva"],
-    "bentley": ["bentley", "bently", "benley", "bentli", "bentlee", "ventley"],
+    "bentley": ["bentley", "bently", "benley", "bentli", "bentlee", "ventley", "bendley", "vently"],
 }
-_PREFIX = r"hey|hei|hej|ey|ei|oye|jey|hay|ay|hola"
+# Rare words in Spanish speech: the name alone opening a sentence ("Bentley, ¿qué ves?") wakes too.
+# Not Fred/Eva — people are called that ("Eva, ven a comer").
+_STANDALONE = {"bentley"}
+_PREFIX = r"hey|hei|hej|ey|ei|oye|hoy|jey|hay|ay|hola"  # "hoy": Whisper's spelling of "oye"
 _PAD = " \t,.!¡?¿:;"
 _PUNCT = r"[\s,.!¡?¿:;]*"
 
@@ -37,8 +40,12 @@ def classify(text: str, name: str) -> Heard:
     text = text.strip()
     n = _name_pattern(name)
 
-    wake = re.compile(rf"\b(?:{_PREFIX}){_PUNCT}{n}\b{_PUNCT}", re.I)
+    # Whisper sometimes adds an article: "Oye el Bentley".
+    wake = re.compile(rf"\b(?:{_PREFIX}){_PUNCT}(?:el\s+)?{n}\b{_PUNCT}", re.I)
     m = wake.search(text)
+    if not m and name.lower() in _STANDALONE:
+        wake = re.compile(rf"^{_PUNCT}{n}\b{_PUNCT}", re.I)
+        m = wake.search(text)
     if m:
         # Strip repeated wakes ("Hej Fred! Hej Fred!") as well as the first.
         rest = wake.sub(" ", text[m.start():]).strip(_PAD + " ")

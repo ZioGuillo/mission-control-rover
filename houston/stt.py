@@ -39,14 +39,21 @@ def _multipart(fields: dict[str, str], wav: bytes) -> tuple[bytes, str]:
     return b"".join(parts), f"multipart/form-data; boundary={boundary}"
 
 
+def prompt_for(names: list[str]) -> str:
+    """Whisper's hint names the rovers people actually call (a stale "Hey Fred" lost "Bentley")."""
+    greetings = ", ".join(f"{g} {n}" for g, n in zip(("Hey", "hola", "oye"), names))
+    return f"{greetings}, ¿qué hay de nuevo en Marte?"
+
+
 class Transcriber:
-    def __init__(self, url: str):
+    def __init__(self, url: str, names: list[str] | None = None):
         self.url = url.rstrip("/")
+        self.prompt = prompt_for(names) if names else PROMPT
 
     def transcribe(self, pcm16k: bytes) -> str:
         """16 kHz mono S16_LE PCM -> Spanish text; "" when whisper heard only noise."""
         body, ctype = _multipart(
-            {"language": "es", "prompt": PROMPT, "response_format": "json", "temperature": "0.0"},
+            {"language": "es", "prompt": self.prompt, "response_format": "json", "temperature": "0.0"},
             _wav(pcm16k))
         req = urllib.request.Request(f"{self.url}/inference", data=body, headers={"Content-Type": ctype})
         try:

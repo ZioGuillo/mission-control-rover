@@ -93,7 +93,7 @@ def main(argv: list[str] | None = None, *, stop: threading.Event | None = None,
         log.info("houston starting: %s", ", ".join(r.name for r in settings.rovers))
         try:
             brain, voice = Brain(settings), Voice()
-            transcriber = Transcriber(settings.whisper_url)
+            transcriber = Transcriber(settings.whisper_url, [r.name for r in settings.rovers])
         except Exception:
             log.exception("startup failed")
             return 1

@@ -92,3 +92,12 @@ def test_bad_json_raises(serve):
     url, _ = serve(b"not json")
     with pytest.raises(SttError):
         Transcriber(url).transcribe(PCM)
+
+
+def test_prompt_names_the_configured_rovers(serve):
+    # Live 2026-10-29: the hint still said "Hey Fred" after the rover became Bentley, and Whisper
+    # wrote "Hey Bentley" as "¿Qué tal vez le…".
+    url, seen = serve({"text": "Hey Bentley."})
+    Transcriber(url, names=["Bentley", "Eva"]).transcribe(PCM)
+    assert "Hey Bentley".encode() in seen["body"] and b"Eva" in seen["body"]
+    assert b"Fred" not in seen["body"]
