@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from houston.rover_link import LinkError, RoverLink, Speaker, parse_cards, pick_usb
+from houston.rover_link import LinkError, RoverLink, Speaker, parse_cards, pick_usb, stop_mic
 
 FIX = Path(__file__).parent / "fixtures"
 APLAY = (FIX / "jetson-aplay-l.txt").read_text()
@@ -27,7 +27,7 @@ def test_ssh_args_has_control_master_options():
     args = RoverLink("ec2-user@rover").ssh_args()
     assert args[0] == "ssh" and args[-1] == "ec2-user@rover"
     joined = " ".join(args)
-    for opt in ("ControlMaster=auto", "ControlPath=~/.ssh/houston-%r@%h:%p",
+    for opt in ("ControlMaster=auto", "ControlPath=~/.ssh/houston-%C",
                 "ControlPersist=10m", "ServerAliveInterval=5", "ConnectTimeout=5"):
         assert f"-o {opt}" in joined
 
@@ -83,21 +83,30 @@ class FakeStdin:
 
 
 class FakeProc:
-    def __init__(self, exit_code=None, err=b"", fail=False):
-        self.returncode = exit_code
+    def __init__(self, exit_code=None, err=b"", fail=False, exit_after=None):
+        self.exit_code = exit_code if exit_after is not None else None
+        self.returncode = exit_code if exit_after is None else None
         self.stdin = FakeStdin(fail)
-        self.stderr = SimpleNamespace(read=lambda: err)
+        self.stderr = SimpleNamespace(read=lambda: err, close=lambda: None)
         self.waited = None
+        self.exit_after = exit_after  # polls before a still-running proc exits
+        self.polls = 0
 
     def poll(self):
+        self.polls += 1
+        if self.exit_after is not None and self.polls > self.exit_after:
+            self.returncode = self.exit_code
         return self.returncode
 
     def wait(self, timeout=None):
         self.waited = timeout
-        return 0
+        if self.exit_after is not None and self.returncode is None:
+            self.returncode = self.exit_code
+        return self.returncode
 
     def kill(self):
         self.killed = True
+        self.returncode = -9
 
 
 def make_speaker(procs, sleeps):
@@ -112,7 +121,7 @@ def test_speaker_retries_when_busy_then_writes():
     spk = make_speaker([busy, busy, good], sleeps)
     spk.write(b"abc")
     spk.close()
-    assert good.stdin.data == b"abc" and good.stdin.closed and good.waited
+    assert good.stdin.data == b"abc" and good.stdin.closed and good.waited is not None
     assert sleeps.count(0.5) == 2
 
 
@@ -148,3 +157,77 @@ def test_speaker_close_kills_on_timeout():
     spk = make_speaker([p], [])
     spk.close()
     assert p.killed
+
+
+def test_busy_exit_detected_by_polling_at_0_15s():
+    slow_busy = FakeProc(1, b"Device or resource busy", exit_after=3)
+    good = FakeProc()
+    sleeps = []
+    spk = make_speaker([slow_busy, good], sleeps)
+    assert sleeps[:3] == [0.05, 0.05, 0.05] and sleeps[3] == 0.5
+    spk.write(b"z")
+    assert good.stdin.data == b"z"
+
+
+def test_close_raises_if_aplay_exited_nonzero():
+    p = FakeProc(exit_code=1, err=b"underrun", exit_after=100)
+    spk = make_speaker([p], [])
+    with pytest.raises(LinkError, match="underrun"):
+        spk.close()
+
+
+def test_popen_oserror_is_link_error():
+    def boom(*a, **k):
+        raise FileNotFoundError("ssh")
+    with pytest.raises(LinkError):
+        Speaker(boom, sleep=lambda s: None)
+    link = RoverLink("r", popen=boom, run=_listing_run)
+    with pytest.raises(LinkError):
+        link.mic()
+
+
+def _listing_run(c, **kw):
+    out = ARECORD if c[-1] == "arecord -l" else APLAY
+    return SimpleNamespace(returncode=0, stdout=out, stderr="")
+
+
+def _link_with(master_rcs):
+    cmds, started = [], []
+
+    def run(c, **kw):
+        if "-O" in c or c[-1] == "true":
+            cmds.append(c)
+            return SimpleNamespace(returncode=master_rcs.pop(0), stdout="", stderr="")
+        return _listing_run(c, **kw)
+
+    def popen(c, **kw):
+        started.append(c)
+        return FakeProc()
+
+    return RoverLink("r", run=run, popen=popen, sleep=lambda s: None), cmds, started
+
+
+def test_speaker_master_check_ok_skips_handshake():
+    link, cmds, started = _link_with([0])
+    link.speaker()
+    assert len(cmds) == 1 and cmds[0][cmds[0].index("-O") + 1] == "check" and len(started) == 1
+
+
+def test_speaker_master_check_fails_then_true_succeeds():
+    link, cmds, started = _link_with([255, 0])
+    link.speaker()
+    assert cmds[1][-1] == "true" and len(started) == 1
+
+
+def test_speaker_unreachable_never_starts_aplay():
+    link, cmds, started = _link_with([255, 255])
+    with pytest.raises(LinkError, match="unreachable"):
+        link.speaker()
+    assert started == []
+
+
+def test_stop_mic_kills_and_reaps():
+    p = FakeProc()
+    p.stdout = SimpleNamespace(close=lambda: None)
+    stop_mic(p)
+    assert p.killed and p.waited is not None
