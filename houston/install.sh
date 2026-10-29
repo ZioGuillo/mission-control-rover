@@ -151,6 +151,9 @@ done
 mkdir -p "$RUNTIME/houston" "$RUNTIME/app/audio" "$LOGS" "$AGENTS"
 rsync -a --delete --exclude .venv --exclude tests --exclude __pycache__ \
     "$HERE/" "$RUNTIME/houston/"
+# Pablo's talk script, for Bentley's demos (gitignored, so only if it's here).
+SCRIPT="$REPO/presentation/Script_Charla_CITIC2026.md"
+[[ -f "$SCRIPT" ]] && cp "$SCRIPT" "$RUNTIME/houston/guion.md"
 rsync -a "$REPO/app/audio/quindar_in.wav" "$REPO/app/audio/quindar_out.wav" "$RUNTIME/app/audio/"
 [[ -x "$VENV/bin/python" ]] || uv venv --python 3.11 "$VENV"
 uv pip install --python "$VENV/bin/python" -r "$HERE/requirements.txt"

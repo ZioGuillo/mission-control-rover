@@ -17,7 +17,7 @@ Revisado por Pablo: pendiente
 - En 2013 la EXA, un equipo ecuatoriano, lanzó el Pegaso, el primer satélite de Ecuador, con unos ochenta mil dólares; semanas después perdió la señal y el equipo publicó un trabajo sobre la pérdida y su recuperación. Pablo debe verificar su estado actual antes de la charla. [guion, slide 7]
 - Perseverance maneja solo con AutoNav: arma un mapa en 3D y esquiva rocas; más del noventa por ciento de su recorrido lo manejó solo. [guion, slide 11]
 - El aterrizaje de Perseverance se llama los siete minutos de terror, y en la Tierra se enteraron de cómo salió unos once minutos después. [guion, slides 13 y 14]
-- Pablo trabajó en JPL y hoy trabaja en Quartermaster, una startup que pone sensores en los mástiles de más de seiscientos cincuenta barcos en veinticinco países. [guion, slide 15]
+- Pablo trabajó en JPL y hoy trabaja en Quartermaster como ingeniero de plataforma senior (no la fundó ni la dirige); es una startup que pone sensores en los mástiles de más de seiscientos cincuenta barcos en veinticinco países. [guion, slide 15]
 - El camino de Pablo: estudió Computación en la ESPOL hasta tercer año, en la primera promoción de robótica, y quedó tercero en el primer campeonato de fútbol robótico; trabajó en Ecuador en TC Televisión, Johnson & Johnson, Claro, LG, IBM y Microsoft. [guion, slide 16]
 - En Estados Unidos Pablo empezó de cero arreglando impresoras en un colegio privado, pasó al Condado de Los Ángeles, luego Meta, Home Depot, TikTok y startups, después JPL, y hoy Quartermaster. [guion, slide 16]
 - Pablo aplicó a JPL siete veces en quince años: seis veces le dijeron que no y la séptima entró. De niño quería ser astronauta. [guion, slide 17]

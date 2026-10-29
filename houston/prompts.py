@@ -7,6 +7,11 @@ from pathlib import Path
 FACTS_DIR = Path(__file__).parent / "facts"
 FACTS_FILE = FACTS_DIR / "marte.md"
 _SOURCE = re.compile(r"\s*\[[^\]]*\]\s*$")
+# Pablo's talk script, only for demos: install.sh copies it next to the code (presentation/ is
+# gitignored and in iCloud, which launchd may not read); in the repo it's read from presentation/.
+SCRIPT_FILES = (Path(__file__).parent / "guion.md",
+                Path(__file__).parent.parent / "presentation" / "Script_Charla_CITIC2026.md")
+_SCRIPT_SKIP = re.compile(r"^(\[|---|\*\*(Tiempo|Clave):)")
 
 
 def load_facts(path: Path | None = None) -> str:
@@ -14,6 +19,20 @@ def load_facts(path: Path | None = None) -> str:
     paths = [Path(path)] if path else sorted(FACTS_DIR.glob("*.md"))
     lines = [line for p in paths for line in p.read_text(encoding="utf-8").splitlines()]
     return "\n".join(_SOURCE.sub("", line) for line in lines if line.startswith("- "))
+
+
+def load_script(paths: tuple[Path, ...] = SCRIPT_FILES) -> str:
+    """What Pablo says on stage, slide 1 to 28: no stage directions, timings, notes or markdown bold."""
+    path = next((p for p in paths if p.is_file()), None)
+    if path is None:
+        return ""
+    text = path.read_text(encoding="utf-8")
+    start, end = text.find("## Slide 1 "), text.find("## Resumen de tiempos")
+    if start < 0:
+        return ""
+    lines = text[start:end if end > start else None].splitlines()
+    kept = [line.replace("**", "") for line in lines if line.strip() and not _SCRIPT_SKIP.match(line.strip())]
+    return "\n".join(kept)
 
 
 def _persona(name: str, personality: str = "", brief: bool = True) -> str:
@@ -32,7 +51,7 @@ def _persona(name: str, personality: str = "", brief: bool = True) -> str:
     )
 
 
-def system(name: str, facts: str, personality: str = "", demo: bool = False) -> str:
+def system(name: str, facts: str, personality: str = "", demo: bool = False, script: str = "") -> str:
     return (
         _persona(name, personality, brief=not demo) + " Te encanta hablar de Marte, la NASA, el JPL y la exploración espacial.\n\n"
         "Hoja de datos verificada (úsala antes que tu memoria; si un dato no está aquí y no lo "
@@ -49,6 +68,7 @@ def system(name: str, facts: str, personality: str = "", demo: bool = False) -> 
         "Si te preguntan qué ves, qué hay alrededor, quién está o cualquier cosa de tu entorno, "
         "llama a mirar; nunca describas tu entorno sin haberla usado."
         + (_DEMO if demo else "")
+        + (_DEMO_SCRIPT + script + _DEMO_REMINDER if demo and script else "")
     )
 
 
@@ -77,6 +97,22 @@ _DEMO = (
     "15 a 20; cuatro: 21; cinco: 22 a 28), con dos o tres frases por slide, y al final del acto para "
     "sin despedirte: no digas \"eso es todo\" ni \"gracias por su atención\" hasta el final real de "
     "la charla, y no preguntes si sigues."
+)
+
+_DEMO_SCRIPT = (
+    "\n\nEste es el guion de Pablo, lo que él dice en cada slide. Síguelo slide por slide sin "
+    "saltarte ninguna y cuéntalo tú con tus palabras, sin cambiar ningún dato, nombre ni número; "
+    "lo que Pablo dice de sí mismo (\"me llamo Pablo\", \"mi robot\", \"estudié\") pásalo a "
+    "tercera persona, y sus frases clave dilas como citas de él. Los títulos (## Slide) son solo "
+    "para el orden; no los leas.\n"
+)
+# After the script, so it's the last thing read: with it, Bentley copied Pablo's "me llamo Pablo".
+_DEMO_REMINDER = (
+    "\n\nRecuerda: quien habla en el escenario eres tú, el rover, no Pablo. Cuando empieces por el "
+    "saludo, preséntate tú (\"soy Bentley, el rover de Pablo\") y presenta a Pablo. Cada yo, me y mi "
+    "del guion es Pablo: dilo como Pablo, él o su (\"Pablo recibió seis no del JPL\", \"su robot\"); "
+    "tú dices yo solo para hablar de ti mismo. Y da solo un acto, el que te "
+    "pidan o el que sigue (sin pedir uno, el acto uno, slides 1 a 4); para al final de ese acto."
 )
 
 

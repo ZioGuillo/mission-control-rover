@@ -58,7 +58,7 @@ _NASA_TOOLS = {"estado_rover", "foto_del_dia"}
 class BrainError(Exception):
     pass
 
-# "Dame una demo de la charla", "da la charla como si fueras yo": Bentley gives it, in Pablo's voice.
+# "Dame una demo de la charla", "da la charla como si fueras yo": Bentley gives it himself, from the script.
 DEMO = re.compile(
     r"\b(demo\w*\b.*\bcharla|charla\b.*\bdemo|(da|dame|haz|hazme|presenta|pres[eé]ntame)\s+(la|mi|tu)\s+charla|"
     r"como si (la )?(dieras|fueras yo|estuvieras en el escenario))", re.I)
@@ -89,6 +89,7 @@ class Brain:
         self.settings = settings
         self.url = settings.ollama_url.rstrip("/") + "/api/chat"
         self.facts = prompts.load_facts()
+        self.script = prompts.load_script()
         self.deadline_s = self.DEADLINE_S
         self.demo_deadline_s = self.DEMO_DEADLINE_S
 
@@ -150,7 +151,7 @@ class Brain:
             yield from self._look(question, name, camera, personality, stop)
             return
         demo = is_demo(history)
-        messages = [{"role": "system", "content": prompts.system(name, self.facts, personality, demo)}]
+        messages = [{"role": "system", "content": prompts.system(name, self.facts, personality, demo, self.script)}]
         messages += [dict(m) for m in history[-HISTORY_TURNS:]]
         think = self.settings.think
         for _ in range(MAX_TOOL_ROUNDS + 1):

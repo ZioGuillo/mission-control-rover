@@ -406,3 +406,28 @@ def test_demo_gets_the_demo_prompt_and_a_longer_deadline(ollama):
     hold.set()
     assert list(out) == ["Me llamo Pablo."]
     assert "siendo tú mismo" in fake.bodies[0]["messages"][0]["content"]
+
+
+def test_script_keeps_only_what_pablo_says(tmp_path):
+    script = tmp_path / "guion.md"
+    script.write_text("# Guion\n\n## Notas generales\nDuerme bien.\n\n## Slide 1 — Saludo\n\n"
+                      "**Tiempo:** 0:00 – 0:30\n\n**Clave:** saludo\n\n[Camina al centro.]\n\n"
+                      "Me llamo **Pablo**.\n\n---\n\n## Slide 2 — El crash\n\nMi robot dejó de responder.\n\n"
+                      "## Resumen de tiempos\nSlide 1: 30 s\n", encoding="utf-8")
+    text = prompts.load_script((tmp_path / "missing.md", script))
+    assert text == "## Slide 1 — Saludo\nMe llamo Pablo.\n## Slide 2 — El crash\nMi robot dejó de responder."
+    assert prompts.load_script((tmp_path / "missing.md",)) == ""
+
+
+def test_script_goes_only_into_the_demo_prompt():
+    facts, script = prompts.load_facts(), "## Slide 1 — Saludo\nMe llamo Pablo."
+    demo = prompts.system("Bentley", facts, demo=True, script=script)
+    assert script in demo
+    assert demo.index("quien habla en el escenario eres tú") > demo.index(script)  # reminder comes last
+    assert script not in prompts.system("Bentley", facts, script=script)
+    assert "guion de Pablo" not in prompts.system("Bentley", facts, demo=True)  # no script, no heading
+
+
+def test_quartermaster_role_is_on_the_sheet():
+    # Live 2026-10-29: Bentley said Pablo founded / runs Quartermaster.
+    assert "ingeniero de plataforma senior" in prompts.load_facts()

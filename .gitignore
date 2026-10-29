@@ -57,3 +57,6 @@ __pycache__
 .env
 .pytest_cache/
 houston/.venv/
+
+# Pablo's talk script, copied by houston/install.sh
+houston/guion.md
