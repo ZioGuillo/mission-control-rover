@@ -106,14 +106,15 @@ class Brain:
         if "error" in reply:
             raise BrainError(f"ollama: {reply['error']}")
 
-    def answer(self, history: list[dict], name: str, camera, personality: str = "") -> Iterator[str]:
+    def answer(self, history: list[dict], name: str, camera, personality: str = "",
+               note: str = "") -> Iterator[str]:
         """Speakable sentences as they stream; ends with FAILURE if anything breaks.
 
         The whole answer gets deadline_s: past it, FAILURE if nothing was said yet, else it just
         stops. The work runs in a thread so a stalled Ollama read can't hold the rover hostage."""
         out: queue.Queue = queue.Queue()
         stop = threading.Event()
-        worker = threading.Thread(target=self._work, args=(history, name, camera, personality, out, stop),
+        worker = threading.Thread(target=self._work, args=(history, name, camera, personality, note, out, stop),
                                   name="houston-brain", daemon=True)
         worker.start()
         deadline = time.monotonic() + (self.demo_deadline_s if is_demo(history) else self.deadline_s)
@@ -138,23 +139,23 @@ class Brain:
         finally:
             stop.set()  # also on close(): the worker drops the Ollama stream at its next line
 
-    def _work(self, history: list[dict], name: str, camera, personality: str, out: queue.Queue,
-              stop: threading.Event) -> None:
+    def _work(self, history: list[dict], name: str, camera, personality: str, note: str,
+              out: queue.Queue, stop: threading.Event) -> None:
         try:
-            for sentence in self._answer(history, name, camera, personality, stop):
+            for sentence in self._answer(history, name, camera, personality, note, stop):
                 out.put(("sentence", sentence))
             out.put(("end", None))
         except Exception as e:  # camera, Ollama, NASA-unrelated bugs: the rover must still speak
             out.put(("error", e))
 
-    def _answer(self, history: list[dict], name: str, camera, personality: str,
+    def _answer(self, history: list[dict], name: str, camera, personality: str, note: str,
                 stop: threading.Event) -> Iterator[str]:
         question = history[-1]["content"]
         if LOOK.search(question):
             yield from self._look(question, name, camera, personality, stop)
             return
         demo = is_demo(history)
-        messages = [{"role": "system", "content": prompts.system(name, self.facts, personality, demo, self.script)}]
+        messages = [{"role": "system", "content": prompts.system(name, self.facts, personality, demo, self.script, note)}]
         messages += [dict(m) for m in history[-HISTORY_TURNS:]]
         think = self.settings.think
         for _ in range(MAX_TOOL_ROUNDS + 1):

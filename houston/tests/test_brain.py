@@ -436,3 +436,10 @@ def test_script_goes_only_into_the_demo_prompt():
 def test_quartermaster_role_is_on_the_sheet():
     # Live 2026-10-29: Bentley said Pablo founded / runs Quartermaster.
     assert "ingeniero de plataforma senior" in prompts.load_facts()
+
+
+def test_note_goes_into_the_prompt(ollama):
+    fake = ollama([say("Unos diez minutos."), DONE])
+    note = "\n\nTiempos medidos por Houston: tu demo duró diez minutos."
+    list(brain_for(fake.url).answer(ask("¿Cuánto duró tu demo?"), "Bentley", FakeCamera(), "", note))
+    assert fake.bodies[0]["messages"][0]["content"].endswith(note)

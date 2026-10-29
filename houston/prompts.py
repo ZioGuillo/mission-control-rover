@@ -51,7 +51,8 @@ def _persona(name: str, personality: str = "", brief: bool = True) -> str:
     )
 
 
-def system(name: str, facts: str, personality: str = "", demo: bool = False, script: str = "") -> str:
+def system(name: str, facts: str, personality: str = "", demo: bool = False, script: str = "",
+           note: str = "") -> str:
     return (
         _persona(name, personality, brief=not demo) + " Te encanta hablar de Marte, la NASA, el JPL y la exploración espacial.\n\n"
         "Hoja de datos verificada (úsala antes que tu memoria; si un dato no está aquí y no lo "
@@ -69,6 +70,7 @@ def system(name: str, facts: str, personality: str = "", demo: bool = False, scr
         "llama a mirar; nunca describas tu entorno sin haberla usado."
         + (_DEMO if demo else "")
         + (_DEMO_SCRIPT + script + _DEMO_REMINDER if demo and script else "")
+        + note
     )
 
 
@@ -114,7 +116,6 @@ _DEMO_REMINDER = (
     "tú dices yo solo para hablar de ti mismo. Y da solo un acto, el que te "
     "pidan o el que sigue (sin pedir uno, el acto uno, slides 1 a 4); para al final de ese acto."
 )
-
 
 def vision(name: str, personality: str = "") -> str:
     return (

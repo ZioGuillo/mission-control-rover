@@ -3,6 +3,7 @@ import logging
 import os
 import re
 import threading
+from datetime import datetime
 import time
 from pathlib import Path
 
@@ -170,11 +171,13 @@ class FakeBrain:
         self.answers = list(answers)
         self.calls: list[tuple[list[dict], str]] = []
         self.personalities: list[str] = []
+        self.notes: list[str] = []
         self._before = before
 
-    def answer(self, history, name, camera, personality=""):
+    def answer(self, history, name, camera, personality="", note=""):
         self.calls.append(([dict(m) for m in history], name))
         self.personalities.append(personality)
+        self.notes.append(note)
         reply = self.answers.pop(0) if self.answers else ["Listo."]
         if self._before:
             self._before()
@@ -197,7 +200,7 @@ def make(name="Fred", brain=None, clock=None, link=None, transcriber=None, voice
     s = RoverSession(rover(name, FRED_WAV if name == "Fred" else EVA_WAV), Settings(rovers=rovers),
                      brain or FakeBrain(), voice or FakeVoice(), transcriber or FakeTranscriber(),
                      clock, link=link or FakeLink(), camera=object(), beep=beep, sleep=sleep,
-                     airtime=airtime)
+                     airtime=airtime, wall=lambda: datetime(2026, 10, 29, 13, 5))
     return s
 
 
@@ -653,14 +656,14 @@ def test_stop_ends_backoff_wait():
 
 def test_speech_before_the_wake_is_not_logged(caplog):
     caplog.set_level(logging.DEBUG)
-    s = make(brain=FakeBrain(["Son las tres."]))
-    s.handle(utter("bla bla la clave es 123. Hey Fred, ¿qué hora es?"))
+    s = make(brain=FakeBrain(["Son dos."]))
+    s.handle(utter("bla bla la clave es 123. Hey Fred, ¿cuántas lunas tiene Marte?"))
     s.handle(utter("Gracias.", rms=3000))
     s.handle(utter("la tarjeta termina en 4455. Hey Fred."))
     text = "\n".join(r.getMessage() for r in caplog.records)
     assert "123" not in text and "clave" not in text and "4455" not in text
-    assert "qué hora es" in text
-    assert len(s.brain.calls) == 1 and s.brain.calls[0][0][-1]["content"] == "qué hora es"
+    assert "cuántas lunas tiene Marte" in text
+    assert len(s.brain.calls) == 1 and s.brain.calls[0][0][-1]["content"] == "cuántas lunas tiene Marte"
 
 
 def test_conversation_ignores_questions_for_another_rover(caplog):
@@ -878,3 +881,64 @@ def test_filler_sound_replaces_every_filler_line():
     assert s.link.speakers[0].tags() == ["<beep in>", "<barks>", "[Uno.]", "<beep out>"]
     assert s.link.speakers[1].tags() == ["<beep in>", "<barks>", "[Dos.]", "<beep out>"]
     assert loaded == [barks]  # loaded once, then served from memory
+
+
+def test_bentley_knows_how_long_his_talk_demo_took():
+    # Live 2026-10-29: asked how long his demo took, Bentley said "tres horas", then 54 minutes.
+    clock = Clock()
+    took = iter([131.4, 205.0, 0.0, 0.0])
+    brain = FakeBrain(["Buenas tardes."], ["Levanten la mano."], ["Unos cinco minutos."], ["Hola."],
+                      before=lambda: clock.advance(next(took)))
+    s = make(clock=clock, brain=brain)
+    s.handle(utter("Hey Fred, dame un demo de la charla"))
+    s.handle(utter("¿Puedes continuar?"))
+    s.handle(utter("¿Cuánto duró tu demo?"))
+    assert "No has dado ninguna demo" in brain.notes[0]
+    assert "una parte (dos minutos y once segundos)" in brain.notes[1]
+    assert "a ti te tomó en total cinco minutos y treinta y seis segundos" in brain.notes[2]
+    assert "dos partes" in brain.notes[2] and "cinco minutos y treinta y seis segundos" in brain.notes[2]
+    assert "Tu respuesta anterior duró tres minutos y veinticinco segundos" in brain.notes[2]
+    s.handle(utter("Dame un demo de la charla"))  # a new demo: the count starts again
+    assert "No has dado ninguna demo" in brain.notes[3]
+
+
+def test_every_answer_knows_the_date_time_and_conversation_length():
+    clock = Clock()
+    brain = FakeBrain(["Dos."], ["Hoy es jueves."], before=lambda: clock.advance(10))
+    s = make(clock=clock, brain=brain)
+    s.handle(utter("Hey Fred, ¿cuántas lunas tiene Marte?"))
+    s.handle(utter("¿Qué día es hoy?"))
+    assert "jueves 29 de octubre de 2026" in brain.notes[0] and "son la una y cinco de la tarde" in brain.notes[0]
+    assert "Esta conversación empezó hace cero segundos" in brain.notes[0]
+    assert "Esta conversación empezó hace diez segundos" in brain.notes[1]
+    assert "No has dado ninguna demo" in brain.notes[1]
+
+
+def test_stopwatch_times_a_rehearsal_and_houston_says_it_exactly():
+    # Live: gpt-oss repeated an old stopwatch reading, so Houston says these itself.
+    clock = Clock()
+    brain = FakeBrain(["Suerte, Pablo."])
+    s = make(clock=clock, brain=brain)
+    s.handle(utter("Hey Fred, cronométrame, voy a ensayar la charla"))
+    clock.advance(61)
+    s.handle(utter("Hey Fred, ¿cuánto llevo?"))
+    clock.advance(44 * 60 - 61 + 30)
+    s.handle(utter("Hey Fred, para el cronómetro"))
+    s.handle(utter("¿Cómo me fue?"))
+    assert s.link.played() == [
+        "<beep in>", "[Cronómetro corriendo. Cuando termines, dime: Fred, para el cronómetro.]", "<beep out>",
+        "<beep in>", "[Llevas un minuto y un segundo.]", "<beep out>",
+        "<beep in>", "[Cronómetro parado: cuarenta y cuatro minutos y treinta segundos.]", "<beep out>",
+        "<beep in>", "[Suerte, Pablo.]", "<beep out>"]
+    assert len(brain.calls) == 1  # only the open question went to the model...
+    assert "la última vez marcó cuarenta y cuatro minutos y treinta segundos" in brain.notes[0]  # ...knowing it
+    assert brain.calls[0][0][-2] == {"role": "assistant",
+                                     "content": "Cronómetro parado: cuarenta y cuatro minutos y treinta segundos."}
+
+
+def test_what_time_is_it_is_said_by_houston():
+    brain = FakeBrain()
+    s = make(brain=brain)
+    s.handle(utter("Hey Fred, ¿qué hora es?"))
+    assert "[Son la una y cinco de la tarde.]" in s.link.played()
+    assert brain.calls == []

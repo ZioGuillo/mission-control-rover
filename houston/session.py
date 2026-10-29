@@ -12,11 +12,12 @@ import queue
 import re
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
 from houston import voice as voice_mod
-from houston.brain import Brain
+from houston.brain import Brain, is_demo
 from houston.diag import Diag
 from houston.camera import AppCamera
 from houston.config import Rover, Settings
@@ -24,6 +25,7 @@ from houston.phrases import Heard, classify, is_phantom
 from houston.playback import Playback
 from houston.rover_link import LinkError, RoverLink, stop_mic
 from houston.stt import SttError, Transcriber
+from houston.timekeeper import Timekeeper
 from houston.vad import Segmenter, Utterance
 from houston.voice import Voice
 
@@ -88,7 +90,8 @@ class RoverSession:
                  link=None, camera=None, beep: Callable[[str], bytes] = voice_mod.beep,
                  sleep: Callable[[float], object] | None = None,
                  airtime: Airtime | None = None,
-                 load_sound: Callable[[Path], bytes] = voice_mod.sound) -> None:
+                 load_sound: Callable[[Path], bytes] = voice_mod.sound,
+                 wall: Callable[[], datetime] = datetime.now) -> None:
         self.rover, self.settings = rover, settings
         self.brain, self.voice, self.transcriber, self.clock = brain, voice, transcriber, clock
         self.link = link or RoverLink(rover.ssh)
@@ -100,6 +103,8 @@ class RoverSession:
         self.filler_after = FILLER_AFTER_S
         self.connected = False
         self.history: list[dict] = []
+        self.time = Timekeeper()  # every duration the rover may say is measured here
+        self._wall = wall
         self._state = WAITING
         self._last_turn = 0.0
         self.airtime = airtime or Airtime()  # __main__ shares one across all rovers
@@ -130,6 +135,7 @@ class RoverSession:
 
     def _end_conversation(self) -> None:
         self.history.clear()
+        self.time.end_conversation()
         if self._state == CONVERSATION:
             self._state = WAITING
 
@@ -273,12 +279,16 @@ class RoverSession:
         self.history.append({"role": "user", "content": question})
         del self.history[:-HISTORY_MESSAGES]
         self._state = CONVERSATION
+        demo = is_demo(self.history)
+        wall = self._wall()
+        exact = self.time.question(question, t0, wall, self.name)  # the time, the stopwatch: said as-is
+        note = self.time.note(self.clock(), wall)
         self._cancel = cancel = threading.Event()
         audio: queue.Queue = queue.Queue()
         spoken: list[str] = []
         times: dict[str, float] = {}
         producer = threading.Thread(target=self._produce, name="houston-synth", daemon=True,
-                                    args=(list(self.history), audio, spoken, times, cancel))
+                                    args=(list(self.history), note, exact, audio, spoken, times, cancel))
         producer.start()  # the brain starts thinking while the speaker opens (~0.3 s)
 
         try:
@@ -318,6 +328,7 @@ class RoverSession:
         if answer:
             self.history.append({"role": "assistant", "content": answer})
             del self.history[:-HISTORY_MESSAGES]
+            self.time.answered(end - t0, demo)
         elif self.history and self.history[-1]["content"] == question:
             self.history.pop()  # failed turn: keep no dangling question
         log.info("%s answer: %s", self.name, " ".join(spoken))
@@ -336,12 +347,13 @@ class RoverSession:
                 continue
         return None
 
-    def _produce(self, history: list[dict], out: queue.Queue, spoken: list[str],
+    def _produce(self, history: list[dict], note: str, exact: str | None, out: queue.Queue, spoken: list[str],
                  times: dict[str, float], cancel: threading.Event) -> None:
         """Brain sentences -> PCM, one at a time, so sentence N+1 is made while N plays."""
         answer = None
         try:
-            answer = self.brain.answer(history, self.name, self.camera, self.rover.personality)
+            answer = (iter([exact]) if exact else
+                      self.brain.answer(history, self.name, self.camera, self.rover.personality, note))
             for sentence in answer:
                 times.setdefault("first_sentence", self.clock())
                 if cancel.is_set():
