@@ -259,3 +259,17 @@ def test_link_speaker_passes_prelude():
     link._popen = popen
     link.speaker(prelude=b"BEEP")
     assert procs[0].stdin.data == b"BEEP"
+
+
+def test_boot_id_reads_the_rovers_boot():
+    calls = []
+
+    def run(cmd, **kw):
+        calls.append(cmd[-1])
+        return SimpleNamespace(returncode=0, stdout="3f2a-11\n", stderr="")
+
+    assert RoverLink("r", run=run).boot_id() == "3f2a-11"
+    assert calls == ["cat /proc/sys/kernel/random/boot_id"]
+    down = RoverLink("r", run=lambda c, **kw: SimpleNamespace(returncode=255, stdout="", stderr="down"))
+    with pytest.raises(LinkError):
+        down.boot_id()

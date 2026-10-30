@@ -102,9 +102,13 @@ class FakeLink:
         self._on_write = on_write
         self.mics = list(mics)  # FakeProc or exception, one per mic() call
         self.procs: list[FakeProc] = []
+        self.boots = ["boot-1"]  # boot_id per call; the last one repeats
 
     def detect(self):
         return ("Device", "UACDemoV10")
+
+    def boot_id(self):
+        return self.boots.pop(0) if len(self.boots) > 1 else self.boots[0]
 
     def mic(self):
         if not self.mics:
@@ -650,6 +654,38 @@ def test_stop_ends_backoff_wait():
     s.stop()
     t.join(1)
     assert not t.is_alive()
+
+
+def run_paused(clock, link, away):
+    """Pause the rover, then run: each backoff sleep is `away` seconds; stops after two."""
+    s = make(clock=clock, link=link)
+    s.handle(utter("Fred, descansa"))
+    assert s.state == "paused"
+    sleeps = []
+
+    def sleep(d):
+        sleeps.append(d)
+        clock.advance(away)
+        if len(sleeps) >= 2:
+            s.stop()
+    s._sleep = sleep
+    t = threading.Thread(target=s.run, name="test-run")
+    t.start()
+    t.join(5)
+    assert not t.is_alive()
+    return s
+
+
+@pytest.mark.parametrize("boots, away, state", [
+    (["boot-1", "boot-2"], 5, "waiting"),   # rebooted, even quickly: awake again
+    (["boot-1"], 90, "waiting"),            # switched off a while (or no boot id): awake again
+    (["boot-1"], 5, "paused")])             # a Wi-Fi blip: still resting
+def test_rover_back_from_a_reboot_is_no_longer_resting(boots, away, state):
+    # Live 2026-10-29: paused in the afternoon, Jetson rebooted at night, "Hey Bentley" got nothing.
+    link = FakeLink(mics=[FakeProc(), FakeProc()])  # connected, lost, connected again
+    link.boots = list(boots)
+    s = run_paused(Clock(), link, away)
+    assert s.state == state
 
 
 # ---------------------------------------------------------------- fix round 1

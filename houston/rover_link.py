@@ -133,15 +133,22 @@ class RoverLink:
             args += ["-o", o]
         return args + [self.ssh]
 
-    def _list(self, tool: str) -> str:
+    def _output(self, cmd: str) -> str:
         try:
-            r = self._run(self.ssh_args() + [f"{tool} -l"], capture_output=True, text=True,
+            r = self._run(self.ssh_args() + [cmd], capture_output=True, text=True,
                           stdin=subprocess.DEVNULL, timeout=15)
         except (OSError, subprocess.TimeoutExpired) as e:
-            raise LinkError(f"{self.ssh}: {tool} -l failed: {e}") from e
+            raise LinkError(f"{self.ssh}: {cmd} failed: {e}") from e
         if r.returncode != 0:
-            raise LinkError(f"{self.ssh}: {tool} -l failed: {r.stderr.strip()}")
+            raise LinkError(f"{self.ssh}: {cmd} failed: {r.stderr.strip()}")
         return r.stdout
+
+    def _list(self, tool: str) -> str:
+        return self._output(f"{tool} -l")
+
+    def boot_id(self) -> str:
+        """Linux's id for this boot: it changes every time the rover restarts."""
+        return self._output("cat /proc/sys/kernel/random/boot_id").strip()
 
     def detect(self) -> tuple[str, str]:
         if self._cards is None:

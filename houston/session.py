@@ -41,6 +41,9 @@ MIN_QUESTION_CHARS = 3     # "Hey Fred" plus less than this is just a wake
 MIN_FOLLOW_UP_WORDS = 2    # in a conversation, "Mmm." / "¿Qué?" is room noise, not a question
 PAUSED_MAX_S = 2.5         # while resting, only utterances this short go to Whisper ("Fred, despierta")
 BACKOFF_START_S, BACKOFF_MAX_S = 2.0, 30.0
+# A rover that rebooted (new boot id) or was away this long comes back awake, not still resting
+# (live 2026-10-29: paused at 15:15, Jetson rebooted at 19:18, "Hey Bentley" got nothing).
+AWAY_CLEARS_PAUSE_S = 60.0
 MIC_CHUNK = 3200           # 0.1 s of 16 kHz S16_LE
 _POLL_S = 0.1
 _JOIN_S = 2.0
@@ -106,6 +109,8 @@ class RoverSession:
         self.time = Timekeeper()  # every duration the rover may say is measured here
         self._wall = wall
         self._state = WAITING
+        self._down_since: float | None = None  # when the link to the rover last went down
+        self._boot_id: str | None = None  # the rover's boot when we last connected
         self._last_turn = 0.0
         self.airtime = airtime or Airtime()  # __main__ shares one across all rovers
         self._muted = False  # frames were dropped: reset the segmenter before the next one
@@ -407,12 +412,15 @@ class RoverSession:
             try:
                 self.link.detect()
                 proc = self.link.mic()
+                self._back()
                 self._listen(proc)
             except (LinkError, SttError) as e:
                 log.warning("%s: %s", self.name, e)
             except Exception:
                 log.exception("%s: session error", self.name)
             self.connected = False
+            if self._down_since is None:
+                self._down_since = self.clock()
             if self._stop.is_set():
                 break
             if self._got_audio:
@@ -420,6 +428,22 @@ class RoverSession:
             log.info("%s: reconnecting in %.0f s", self.name, delay)
             self._sleep(delay)
             delay = min(delay * 2, BACKOFF_MAX_S)
+
+    def _back(self) -> None:
+        """The rover answers again: if it rebooted, or was away long, it is no longer resting."""
+        away = None if self._down_since is None else self.clock() - self._down_since
+        self._down_since = None
+        try:
+            boot = self.link.boot_id()
+        except LinkError as e:
+            log.warning("%s: no boot id: %s", self.name, e)
+            boot = None
+        rebooted = bool(boot and self._boot_id and boot != self._boot_id)
+        self._boot_id = boot or self._boot_id
+        if self._state == PAUSED and (rebooted or (away is not None and away >= AWAY_CLEARS_PAUSE_S)):
+            log.info("%s: back (%s), no longer resting", self.name,
+                     "rebooted" if rebooted else f"{away:.0f} s away")
+            self._state = WAITING
 
     def _listen(self, proc) -> None:
         chunks: queue.Queue = queue.Queue()
