@@ -67,9 +67,9 @@ def env(tmp_path, monkeypatch):
     class FakeSession:
         crash_first = set()
 
-        def __init__(self, rover, settings, brain, voice, transcriber, *, airtime):
+        def __init__(self, rover, settings, brain, voice, transcriber, *, airtime, inbox):
             self.rover, self.brain, self.voice = rover, brain, voice
-            self.airtime = airtime
+            self.airtime, self.inbox = airtime, inbox
             self.transcriber = transcriber
             self.stopped = threading.Event()
             self.started = threading.Event()
