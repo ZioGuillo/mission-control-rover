@@ -40,6 +40,8 @@ MUTE_MARGIN_S = 0.15       # keep the mic deaf this long after the rover goes qu
                            # 0.5 s clipped people who answer right away — "Carlos" for "¿Cuántos vuelos")
 MIN_QUESTION_CHARS = 3     # "Hey Fred" plus less than this is just a wake
 MIN_FOLLOW_UP_WORDS = 2    # in a conversation, "Mmm." / "¿Qué?" is room noise, not a question
+# ...but "¡Sí!" right after the rover asked something is an answer ("¿Quieres oír una historia?").
+SHORT_REPLY = re.compile(r"^\W*(s[ií]+|no|claro|dale|obvio|bueno|ok|okay|vale|yes)\W*$", re.I)
 PAUSED_MAX_S = 2.5         # while resting, only utterances this short go to Whisper ("Fred, despierta")
 BACKOFF_START_S, BACKOFF_MAX_S = 2.0, 30.0
 # A rover that rebooted (new boot id) or was away this long comes back awake, not still resting
@@ -204,8 +206,9 @@ class RoverSession:
                 return
             self._answer(heard.rest, t0, stt)
             return
-        if (state == CONVERSATION and len(re.findall(r"\w+", text)) >= MIN_FOLLOW_UP_WORDS
-                and not self._for_another_rover(text)):
+        asked = bool(self.history) and self.history[-1]["content"].rstrip().endswith("?")
+        if (state == CONVERSATION and not self._for_another_rover(text)
+                and (len(re.findall(r"\w+", text)) >= MIN_FOLLOW_UP_WORDS or (asked and SHORT_REPLY.match(text)))):
             self._answer(text, t0, stt)
 
     # ------------------------------------------------------------------ speaking

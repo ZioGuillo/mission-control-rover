@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from houston import nasa, prompts
+from houston import effects, nasa, prompts
 from houston.brain import LOOK, Brain, BrainError, is_demo
 from houston.camera import CameraError
 from houston.config import Settings
@@ -443,3 +443,16 @@ def test_note_goes_into_the_prompt(ollama):
     note = "\n\nTiempos medidos por Houston: tu demo duró diez minutos."
     list(brain_for(fake.url).answer(ask("¿Cuánto duró tu demo?"), "Bentley", FakeCamera(), "", note))
     assert fake.bodies[0]["messages"][0]["content"].endswith(note)
+
+
+def test_story_is_told_in_parts_that_continue(ollama, monkeypatch):
+    monkeypatch.setattr("houston.brain.STORY_PARTS", 3)
+    fake = ollama([say("Había un dragón. [rugido] "), DONE], [say("Voló lejos. "), DONE], [say("Fin."), DONE])
+    history = [{"role": "user", "content": "Cuéntale una historia de dragones a Lucca"}]
+    out = list(brain_for(fake.url).answer(history, "Bentley", FakeCamera()))
+    assert out == ["Había un dragón.", effects.MARK + "rugido", "Voló lejos.", "Fin."]
+    assert "tools" not in fake.bodies[0]
+    assert "cuento" in fake.bodies[0]["messages"][0]["content"]
+    assert fake.bodies[2]["messages"][-2:] == [
+        {"role": "assistant", "content": "Había un dragón. [rugido] Voló lejos."},
+        {"role": "user", "content": "Sigue con la parte 3 de 3."}]

@@ -23,6 +23,7 @@ from houston.sentences import Splitter
 log = logging.getLogger(__name__)
 
 HISTORY_TURNS = 8
+STORY_PARTS = 4  # one answer came out 640 to 1000 words; six parts made ~2900 (19 min); four is ~10 min
 MAX_TOOL_ROUNDS = 3
 _TIMEOUT_S = 120.0  # per socket read: a cold 120b load can take a while to send its first byte
 _SNAPSHOT_TIMEOUT_S = 6.0
@@ -180,6 +181,9 @@ class Brain:
                                                                  note, story)}]
         messages += [dict(m) for m in history[-HISTORY_TURNS:]]
         think = self.settings.think
+        if story:
+            yield from self._story(messages, think, stop)
+            return
         for _ in range(MAX_TOOL_ROUNDS + 1):
             splitter, content, thinking, calls = Splitter(), "", "", []
             for msg in self._stream({"model": self.settings.llm, "think": think, "tools": TOOLS,
@@ -209,6 +213,24 @@ class Brain:
                 if tool in _NASA_TOOLS:
                     think = "low"  # answering from NASA data, not reasoning
         raise BrainError(f"still calling tools after {MAX_TOOL_ROUNDS} rounds")
+
+    def _story(self, messages: list[dict], think: str, stop: threading.Event) -> Iterator[str]:
+        """The story in STORY_PARTS answers, each picking up where the last one stopped.
+        gpt-oss writes a part in seconds and Bentley tells it in minutes, so there is no gap."""
+        told = ""
+        for part in range(1, STORY_PARTS + 1):
+            ask = messages if part == 1 else messages + [
+                {"role": "assistant", "content": told},
+                {"role": "user", "content": f"Sigue con la parte {part} de {STORY_PARTS}."}]
+            splitter, content = Splitter(), ""
+            for msg in self._stream({"model": self.settings.llm, "think": think,
+                                     "keep_alive": _LLM_KEEP_ALIVE, "messages": ask}, stop):
+                content += msg.get("content") or ""
+                for sentence in splitter.push(msg.get("content") or ""):
+                    yield from effects.split(sentence)
+            for sentence in splitter.flush():
+                yield from effects.split(sentence)
+            told = (told + " " + content).strip()
 
     def _run_tool(self, fn: dict) -> tuple[str, dict]:
         """NASA tool result, or {"error": ...}: a NASA error is spoken as NASA_DOWN, never improvised on."""

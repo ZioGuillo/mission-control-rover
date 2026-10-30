@@ -991,3 +991,13 @@ def test_story_sounds_are_played_not_spoken_or_remembered():
     assert s.link.played() == ["<beep in>", "[Había una vez un dragón.]", "<rugido>", "[Fin.]", "<beep out>"]
     s.handle(utter("¿Te gustó?"))
     assert brain.calls[1][0][1] == {"role": "assistant", "content": "Había una vez un dragón. Fin."}
+
+
+def test_a_one_word_yes_answers_the_rovers_question():
+    brain = FakeBrain(["Hola Lucca, ¿quieres oír una historia de dragones?"], ["Había una vez..."], ["Dos."])
+    s = make(brain=brain)
+    s.handle(utter("Hey Fred, pregúntale a Lucca si quiere oír una historia de dragones"))
+    s.handle(utter("¡Sí!"))
+    assert len(brain.calls) == 2 and brain.calls[1][0][-1]["content"] == "¡Sí!"
+    s.handle(utter("Sí."))  # the story didn't ask anything: a lone "Sí" is room noise again
+    assert len(brain.calls) == 2
