@@ -28,7 +28,9 @@ def chat(*turns):
     chat("Bentley, cuéntame un cuento"),
     chat("Pregúntale a Lucca si quiere oír una historia de dragones",
          "Hey Lucca, ¿quieres oír una historia de dragones?", "¡Sí!"),
-    chat("hola", "¿Te cuento un cuento de dragones?", "Sí, por favor")])
+    chat("hola", "¿Te cuento un cuento de dragones?", "Sí, por favor"),
+    chat("Una historia para Luca, de dragones."), chat("Cuenta la historia, dijo que sí."),
+    chat("¿Me cuentas otro cuento?")])
 def test_story_requests(history):
     assert is_story(history)
 

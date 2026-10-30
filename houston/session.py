@@ -40,6 +40,9 @@ MUTE_MARGIN_S = 0.15       # keep the mic deaf this long after the rover goes qu
                            # 0.5 s clipped people who answer right away — "Carlos" for "¿Cuántos vuelos")
 MIN_QUESTION_CHARS = 3     # "Hey Fred" plus less than this is just a wake
 MIN_FOLLOW_UP_WORDS = 2    # in a conversation, "Mmm." / "¿Qué?" is room noise, not a question
+# "¿Cuál está, mamá?" is said to mom, not to the rover (live 2026-10-29, Bentley answered it).
+_FAMILY = r"(mam[aá]|mami|pap[aá]|papi|abuel[ao]|stefania|pablo|lucca|luca|luka)"
+TO_FAMILY = re.compile(rf"^\W*{_FAMILY}\s*,|,\s*{_FAMILY}\W*$", re.I)
 # ...but "¡Sí!" right after the rover asked something is an answer ("¿Quieres oír una historia?").
 SHORT_REPLY = re.compile(r"^\W*(s[ií]+|no|claro|dale|obvio|bueno|ok|okay|vale|yes)\W*$", re.I)
 PAUSED_MAX_S = 2.5         # while resting, only utterances this short go to Whisper ("Fred, despierta")
@@ -207,7 +210,7 @@ class RoverSession:
             self._answer(heard.rest, t0, stt)
             return
         asked = bool(self.history) and self.history[-1]["content"].rstrip().endswith("?")
-        if (state == CONVERSATION and not self._for_another_rover(text)
+        if (state == CONVERSATION and not self._for_another_rover(text) and not TO_FAMILY.search(text)
                 and (len(re.findall(r"\w+", text)) >= MIN_FOLLOW_UP_WORDS or (asked and SHORT_REPLY.match(text)))):
             self._answer(text, t0, stt)
 

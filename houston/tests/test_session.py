@@ -1001,3 +1001,19 @@ def test_a_one_word_yes_answers_the_rovers_question():
     assert len(brain.calls) == 2 and brain.calls[1][0][-1]["content"] == "¡Sí!"
     s.handle(utter("Sí."))  # the story didn't ask anything: a lone "Sí" is room noise again
     assert len(brain.calls) == 2
+
+
+@pytest.mark.parametrize("text", ["¿Cuál está, mamá?", "Papá, ¿me pasas el agua?", "¿Vamos a comer, Stefania?"])
+def test_follow_ups_said_to_family_are_not_for_the_rover(text):
+    brain = FakeBrain(["Dos."])
+    s = make(brain=brain)
+    s.handle(utter("Hey Fred, ¿cuántas lunas tiene Marte?"))
+    s.handle(utter(text))
+    assert len(brain.calls) == 1
+
+
+def test_wake_question_mentioning_mom_still_goes_to_the_rover():
+    brain = FakeBrain()
+    s = make(brain=brain)
+    s.handle(utter("Hey Fred, ¿cómo se llama mi mamá?"))
+    assert len(brain.calls) == 1

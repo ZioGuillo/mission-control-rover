@@ -82,8 +82,9 @@ def is_demo(history: list[dict]) -> bool:
 
 
 # "Cuéntale una historia de dragones a Lucca", or "¡sí!" right after Bentley offered one.
+# Live 2026-10-29: "Una historia para Luca, de dragones" has no verb; "la historia de Marte" is a question.
 STORY = re.compile(r"\b(cu[eé]nta(me|le|nos|les)?|quiero (o[ií]r|escuchar)|queremos (o[ií]r|escuchar))\b"
-                   r".*\b(historia|cuento)", re.I)
+                   r".*\b(historia|cuento)|\b(una|otra|un|otro) (historia|cuento)\b", re.I)
 YES = re.compile(r"^\W*(\w+,?\s+)?(s[ií]+|claro|dale|obvio|bueno|ok|okay|yes|por favor|quiero)\b", re.I)
 
 
@@ -93,7 +94,7 @@ def is_story(history: list[dict]) -> bool:
         return False
     question = history[-1]["content"]
     if STORY.search(question):
-        return True
+        return not re.search(r"\bpreg[uú]nta", question, re.I)  # "pregúntale si quiere…": ask first
     offer = history[-2]["content"] if len(history) > 1 and history[-2].get("role") == "assistant" else ""
     return bool(YES.search(question) and re.search(r"\b(historia|cuento)\b", offer, re.I) and "?" in offer)
 
