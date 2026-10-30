@@ -16,7 +16,7 @@ import time
 import urllib.request
 from collections.abc import Iterator
 
-from houston import effects, nasa, prompts
+from houston import calc, effects, nasa, prompts
 from houston.config import Settings
 from houston.sentences import Splitter
 
@@ -54,6 +54,10 @@ TOOLS = [
     _tool("foto_del_dia", "La foto astronómica del día de la NASA (APOD): título, fecha y explicación en inglés."),
 ]
 _NASA_TOOLS = {"estado_rover", "foto_del_dia"}
+HOMEWORK_TOOLS = TOOLS + [
+    _tool("calcular", "Calcula exacto una cuenta: suma, resta, multiplicación, división (con cociente y residuo) o "
+          "potencia. Úsala para toda cuenta, y antes de decir si una respuesta está bien o mal.",
+          expresion={"type": "string", "description": "La cuenta con números y + - * / ( ), por ejemplo 7*8 o 123-47"})]
 
 
 class BrainError(Exception):
@@ -203,7 +207,8 @@ class Brain:
             return
         for _ in range(MAX_TOOL_ROUNDS + 1):
             splitter, content, thinking, calls = Splitter(), "", "", []
-            for msg in self._stream({"model": self.settings.llm, "think": think, "tools": TOOLS,
+            for msg in self._stream({"model": self.settings.llm, "think": think,
+                                     "tools": HOMEWORK_TOOLS if homework else TOOLS,
                                      "keep_alive": _LLM_KEEP_ALIVE, "messages": messages}, stop):
                 calls += msg.get("tool_calls") or []
                 content += msg.get("content") or ""
@@ -252,6 +257,11 @@ class Brain:
     def _run_tool(self, fn: dict) -> tuple[str, dict]:
         """NASA tool result, or {"error": ...}: a NASA error is spoken as NASA_DOWN, never improvised on."""
         name, args = fn.get("name", ""), fn.get("arguments") or {}
+        if name == "calcular":
+            try:
+                return name, calc.calculate(str(args.get("expresion", "")))
+            except calc.CalcError as e:
+                return name, {"error": str(e)}
         try:
             if name == "estado_rover":
                 return name, nasa.rover_status(str(args.get("rover", "")))

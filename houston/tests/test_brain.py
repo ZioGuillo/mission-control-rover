@@ -456,3 +456,18 @@ def test_story_is_told_in_parts_that_continue(ollama, monkeypatch):
     assert fake.bodies[2]["messages"][-2:] == [
         {"role": "assistant", "content": "Había un dragón. [rugido] Voló lejos."},
         {"role": "user", "content": "Sigue con la parte 3 de 3."}]
+
+
+def test_homework_gets_the_calculator(ollama):
+    fake = ollama([call("calcular", expresion="7*8"), DONE], [say("Siete por ocho son cincuenta y seis."), DONE])
+    history = [{"role": "user", "content": "Ayúdame con mi tarea: siete por ocho"}]
+    out = list(brain_for(fake.url).answer(history, "Bentley", FakeCamera()))
+    assert out == ["Siete por ocho son cincuenta y seis."]
+    assert "calcular" in {t["function"]["name"] for t in fake.bodies[0]["tools"]}
+    assert '"resultado": 56' in fake.bodies[1]["messages"][-1]["content"]
+
+
+def test_calculator_is_only_for_homework(ollama):
+    fake = ollama([say("Dos."), DONE])
+    list(brain_for(fake.url).answer(ask("¿Cuántas lunas tiene Marte?"), "Bentley", FakeCamera()))
+    assert "calcular" not in {t["function"]["name"] for t in fake.bodies[0]["tools"]}
