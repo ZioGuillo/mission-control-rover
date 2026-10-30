@@ -18,7 +18,7 @@ from typing import Callable
 
 from houston import effects
 from houston import voice as voice_mod
-from houston.brain import Brain, is_demo, is_homework
+from houston.brain import HOMEWORK, Brain, is_demo, is_homework
 from houston.diag import Diag
 from houston.camera import AppCamera
 from houston.config import Rover, Settings
@@ -143,7 +143,10 @@ class RoverSession:
 
     @property
     def state(self) -> str:
-        timeout = HOMEWORK_TIMEOUT_S if is_homework(self.history) else self.settings.conversation_timeout
+        # Doing homework, or Bentley just offered to help (live: "¿Quieres que te ayude…?" closed in 15 s).
+        offered = bool(self.history) and HOMEWORK.search(self.history[-1]["content"]) is not None
+        timeout = (HOMEWORK_TIMEOUT_S if offered or is_homework(self.history)
+                   else self.settings.conversation_timeout)
         if self._state == CONVERSATION and self.clock() - self._last_turn > timeout:
             log.info("%s: conversation timed out", self.name)
             self._end_conversation()

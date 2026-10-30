@@ -1032,6 +1032,7 @@ def test_inbox_makes_the_rover_ask_and_the_reply_needs_no_wake(tmp_path):
     assert not inbox.exists()
     assert s.link.played() == ["<beep in>", "[¡Hey, Lucca! ¿Quieres que te ayude con tus tareas?]", "<beep out>"]
     assert s.state == "conversation"
+    s.clock.advance(40)  # a kid takes a while to answer the offer
     s.handle(utter("¡Sí!"))
     assert brain.calls[0][0] == [
         {"role": "assistant", "content": "¡Hey, Lucca! ¿Quieres que te ayude con tus tareas?"},
