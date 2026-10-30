@@ -1017,3 +1017,34 @@ def test_wake_question_mentioning_mom_still_goes_to_the_rover():
     s = make(brain=brain)
     s.handle(utter("Hey Fred, ¿cómo se llama mi mamá?"))
     assert len(brain.calls) == 1
+
+
+def test_inbox_makes_the_rover_ask_and_the_reply_needs_no_wake(tmp_path):
+    inbox = tmp_path / "fred.txt"
+    brain = FakeBrain(["¡Claro! ¿De qué materia es?"])
+    s = make(brain=brain)
+    s.inbox = inbox
+    s._check_inbox()  # nothing waiting
+    assert s.link.played() == []
+    inbox.write_text("¡Hey, Lucca! ¿Quieres que te ayude con tus tareas?\n", encoding="utf-8")
+    s._inbox_checked = 0.0
+    s._check_inbox()
+    assert not inbox.exists()
+    assert s.link.played() == ["<beep in>", "[¡Hey, Lucca! ¿Quieres que te ayude con tus tareas?]", "<beep out>"]
+    assert s.state == "conversation"
+    s.handle(utter("¡Sí!"))
+    assert brain.calls[0][0] == [
+        {"role": "assistant", "content": "¡Hey, Lucca! ¿Quieres que te ayude con tus tareas?"},
+        {"role": "user", "content": "¡Sí!"}]
+
+
+def test_homework_conversation_waits_longer():
+    clock = Clock()
+    brain = FakeBrain(["¿De qué materia?"], ["Veamos: ¿cuánto es siete más siete?"])
+    s = make(clock=clock, brain=brain)
+    s.handle(utter("Hey Fred, ayúdame con mi tarea"))
+    clock.advance(45)  # past the usual timeout, thinking
+    s.handle(utter("Es de matemáticas, sumas"))
+    assert len(brain.calls) == 2
+    clock.advance(61)
+    assert s.state == "waiting"

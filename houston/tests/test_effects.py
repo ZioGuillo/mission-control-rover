@@ -1,7 +1,7 @@
 import pytest
 
 from houston import effects
-from houston.brain import is_story
+from houston.brain import is_homework, is_story
 
 
 def test_tags_become_sounds_and_are_never_read():
@@ -42,3 +42,11 @@ def test_story_requests(history):
     chat("Cuéntale una historia", "Había una vez...", "¿Cuántas lunas tiene Marte?")])
 def test_not_story_requests(history):
     assert not is_story(history)
+
+
+def test_homework_mode():
+    assert is_homework(chat("Bentley, ayúdame con mi tarea"))
+    assert is_homework(chat("hola", "¡Hey, Lucca! ¿Quieres que te ayude con tus tareas?", "¡Sí!",
+                            "¿De qué materia?", "matemáticas"))
+    assert not is_homework(chat("hola", "¿Quieres que te ayude con tus tareas?", "No, gracias"))
+    assert not is_homework(chat("¿Cuántas lunas tiene Marte?"))

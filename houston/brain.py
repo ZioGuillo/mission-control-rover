@@ -99,6 +99,21 @@ def is_story(history: list[dict]) -> bool:
     return bool(YES.search(question) and re.search(r"\b(historia|cuento)\b", offer, re.I) and "?" in offer)
 
 
+# Homework: once a conversation is about tareas, it stays in tutor mode until it ends.
+HOMEWORK = re.compile(r"\b(tareas?|deberes|homework|ay[uú]da(me|le)? (con|a hacer) (la|las|mi|mis|su|sus))\b", re.I)
+
+
+def is_homework(history: list[dict]) -> bool:
+    """This conversation is about homework: asked for, or a yes to Bentley's offer, and still going."""
+    for i, m in enumerate(history):
+        if m.get("role") == "user" and HOMEWORK.search(m["content"]):
+            return True
+        if (m.get("role") == "assistant" and HOMEWORK.search(m["content"]) and "?" in m["content"]
+                and i + 1 < len(history) and YES.search(history[i + 1]["content"])):
+            return True
+    return False
+
+
 class Brain:
     FAILURE = "Base, tengo una falla en mis sistemas. Intenta de nuevo."
     # Said as-is when a NASA lookup fails: the error never goes back to the model, which once
@@ -178,8 +193,9 @@ class Brain:
             return
         demo = is_demo(history)
         story = not demo and is_story(history)
+        homework = not (demo or story) and is_homework(history)
         messages = [{"role": "system", "content": prompts.system(name, self.facts, personality, demo, self.script,
-                                                                 note, story)}]
+                                                                 note, story, homework)}]
         messages += [dict(m) for m in history[-HISTORY_TURNS:]]
         think = self.settings.think
         if story:

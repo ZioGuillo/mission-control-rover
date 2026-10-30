@@ -18,7 +18,7 @@ from typing import Callable
 
 from houston import effects
 from houston import voice as voice_mod
-from houston.brain import Brain, is_demo
+from houston.brain import Brain, is_demo, is_homework
 from houston.diag import Diag
 from houston.camera import AppCamera
 from houston.config import Rover, Settings
@@ -52,6 +52,9 @@ BACKOFF_START_S, BACKOFF_MAX_S = 2.0, 30.0
 AWAY_CLEARS_PAUSE_S = 60.0
 MIC_CHUNK = 3200           # 0.1 s of 16 kHz S16_LE
 _POLL_S = 0.1
+INBOX_DIR = Path("~/.config/houston/say").expanduser()  # say/bentley.txt: Bentley says it, unprompted
+_INBOX_EVERY_S = 0.5
+HOMEWORK_TIMEOUT_S = 60.0  # a kid doing homework thinks longer than 15 s before answering
 _JOIN_S = 2.0
 
 SAY_LISTENING = "¿Sí? Te escucho."
@@ -100,7 +103,7 @@ class RoverSession:
                  sleep: Callable[[float], object] | None = None,
                  airtime: Airtime | None = None,
                  load_sound: Callable[[Path], bytes] = voice_mod.sound,
-                 wall: Callable[[], datetime] = datetime.now) -> None:
+                 wall: Callable[[], datetime] = datetime.now, inbox: Path | None = None) -> None:
         self.rover, self.settings = rover, settings
         self.brain, self.voice, self.transcriber, self.clock = brain, voice, transcriber, clock
         self.link = link or RoverLink(rover.ssh)
@@ -113,6 +116,8 @@ class RoverSession:
         self.connected = False
         self.history: list[dict] = []
         self.time = Timekeeper()  # every duration the rover may say is measured here
+        self.inbox = inbox
+        self._inbox_checked = 0.0
         self._wall = wall
         self._state = WAITING
         self._down_since: float | None = None  # when the link to the rover last went down
@@ -138,8 +143,8 @@ class RoverSession:
 
     @property
     def state(self) -> str:
-        if (self._state == CONVERSATION
-                and self.clock() - self._last_turn > self.settings.conversation_timeout):
+        timeout = HOMEWORK_TIMEOUT_S if is_homework(self.history) else self.settings.conversation_timeout
+        if self._state == CONVERSATION and self.clock() - self._last_turn > timeout:
             log.info("%s: conversation timed out", self.name)
             self._end_conversation()
         return self._state
@@ -474,6 +479,7 @@ class RoverSession:
                     return
                 self._got_audio = True
                 self.feed(item[1], item[0])
+                self._check_inbox()
         finally:
             stop_mic(proc)
             reader.join(_JOIN_S)
@@ -481,6 +487,43 @@ class RoverSession:
                 proc.stdout.close()
             except (OSError, AttributeError):
                 pass
+
+    def _check_inbox(self) -> None:
+        """Something Houston was asked to say unprompted ("pregúntale a Lucca…"), at most every 0.5 s."""
+        if self.inbox is None or time.monotonic() - self._inbox_checked < _INBOX_EVERY_S:
+            return
+        self._inbox_checked = time.monotonic()
+        try:
+            text = self.inbox.read_text(encoding="utf-8").strip()
+            self.inbox.unlink()
+        except FileNotFoundError:
+            return
+        except OSError as e:
+            log.error("%s: inbox: %s", self.name, e)
+            return
+        if text:
+            self.announce(text)
+
+    def announce(self, text: str) -> None:
+        """Speak first, between beeps; the reply that follows needs no wake word."""
+        log.info("%s says: %s", self.name, text)
+        try:
+            pcm = self.voice.synth(text, self.rover.voice)
+            beep_in, beep_out = self._beep("in"), self._beep("out")
+        except Exception as e:
+            log.error("%s: cannot say %r: %s", self.name, text, e)
+            return
+        pb = self._open(beep_in)
+        if pb is None:
+            return
+        pb.put(pcm, answer=True)
+        pb.put(beep_out)
+        if self._finish(pb) is None:
+            return
+        self.history.append({"role": "assistant", "content": text})
+        del self.history[:-HISTORY_MESSAGES]
+        self._state = CONVERSATION
+        self._last_turn = self.clock()
 
     def _read_mic(self, stream, chunks: queue.Queue) -> None:
         try:

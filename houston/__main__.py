@@ -12,7 +12,7 @@ from pathlib import Path
 
 from houston import config
 from houston.brain import Brain
-from houston.session import Airtime, RoverSession
+from houston.session import INBOX_DIR, Airtime, RoverSession
 from houston.stt import Transcriber
 from houston.voice import Voice
 
@@ -102,7 +102,8 @@ def main(argv: list[str] | None = None, *, stop: threading.Event | None = None,
         airtime = Airtime()  # one for the whole room: no rover listens while another speaks
 
         def make_session(rover):
-            return RoverSession(rover, settings, brain, voice, transcriber, airtime=airtime)
+            return RoverSession(rover, settings, brain, voice, transcriber, airtime=airtime,
+                                inbox=INBOX_DIR / f"{rover.name.lower()}.txt")
 
         sessions: dict[str, RoverSession] = {}
         threads = [threading.Thread(target=_supervise,

@@ -52,9 +52,9 @@ def _persona(name: str, personality: str = "", brief: bool = True) -> str:
 
 
 def system(name: str, facts: str, personality: str = "", demo: bool = False, script: str = "",
-           note: str = "", story: bool = False) -> str:
+           note: str = "", story: bool = False, homework: bool = False) -> str:
     return (
-        _persona(name, personality, brief=not (demo or story)) + " Te encanta hablar de Marte, la NASA, el JPL y la exploración espacial.\n\n"
+        _persona(name, personality, brief=not (demo or story or homework)) + " Te encanta hablar de Marte, la NASA, el JPL y la exploración espacial.\n\n"
         "Hoja de datos verificada (úsala antes que tu memoria; si un dato no está aquí y no lo "
         "sabes con certeza, o es muy reciente, dilo con honestidad en vez de inventar. Si das un número "
         "que no está en la hoja ni viene de una herramienta de la NASA, dilo como aproximado o di que "
@@ -71,6 +71,7 @@ def system(name: str, facts: str, personality: str = "", demo: bool = False, scr
         + (_DEMO if demo else "")
         + (_DEMO_SCRIPT + script + _DEMO_REMINDER if demo and script else "")
         + (_STORY if story else "")
+        + (_HOMEWORK if homework else "")
         + note
     )
 
@@ -124,6 +125,17 @@ _STORY = (
     "va sola, después del punto de una frase y antes de la siguiente, nunca en lugar de una palabra "
     "(bien: \"El dragón abrió la boca. [rugido] Las hojas temblaron.\"; mal: \"soltó un [rugido] enorme\"). Nunca leas ni expliques las marcas. Termina con un final feliz y una "
     "despedida cariñosa. Aquí no aplica el límite de dos frases."
+)
+
+
+_HOMEWORK = (
+    "\n\nAhora ayudas a un niño (casi siempre Lucca) con sus tareas, como un tutor paciente, alegre y "
+    "cariñoso. Si no sabes de qué materia es o qué tiene que hacer, pregúntaselo primero. No le des la "
+    "respuesta de una vez: explícale paso a paso con ejemplos sencillos y cosas que conoce, hazle una "
+    "pregunta para que piense él, y celebra cuando acierte; si se equivoca, díselo con cariño y dale "
+    "una pista. Si es de leer o escribir, ayúdale a deletrear o a revisar lo que escribió. Las cuentas "
+    "y los datos tienen que ser siempre correctos; si no estás seguro, dilo. Habla claro y corto, hasta "
+    "cuatro frases, una idea a la vez, y nada de chistes largos que lo distraigan."
 )
 
 
