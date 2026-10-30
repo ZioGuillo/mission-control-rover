@@ -16,7 +16,7 @@ import time
 import urllib.request
 from collections.abc import Iterator
 
-from houston import nasa, prompts
+from houston import effects, nasa, prompts
 from houston.config import Settings
 from houston.sentences import Splitter
 
@@ -80,6 +80,23 @@ def is_demo(history: list[dict]) -> bool:
     return False
 
 
+# "Cuéntale una historia de dragones a Lucca", or "¡sí!" right after Bentley offered one.
+STORY = re.compile(r"\b(cu[eé]nta(me|le|nos|les)?|quiero (o[ií]r|escuchar)|queremos (o[ií]r|escuchar))\b"
+                   r".*\b(historia|cuento)", re.I)
+YES = re.compile(r"^\W*(\w+,?\s+)?(s[ií]+|claro|dale|obvio|bueno|ok|okay|yes|por favor|quiero)\b", re.I)
+
+
+def is_story(history: list[dict]) -> bool:
+    """The last question asks for a story, or says yes to the story Bentley just offered."""
+    if not history or history[-1].get("role") != "user":
+        return False
+    question = history[-1]["content"]
+    if STORY.search(question):
+        return True
+    offer = history[-2]["content"] if len(history) > 1 and history[-2].get("role") == "assistant" else ""
+    return bool(YES.search(question) and re.search(r"\b(historia|cuento)\b", offer, re.I) and "?" in offer)
+
+
 class Brain:
     FAILURE = "Base, tengo una falla en mis sistemas. Intenta de nuevo."
     # Said as-is when a NASA lookup fails: the error never goes back to the model, which once
@@ -87,6 +104,7 @@ class Brain:
     NASA_DOWN = "No pude comunicarme con la NASA ahora mismo. Intenta en un rato."
     DEADLINE_S = 30.0  # a whole answer, first byte to last sentence
     DEMO_DEADLINE_S = 120.0  # a talk demo is a whole act, about fifteen sentences
+    STORY_DEADLINE_S = 300.0  # a ten-minute story for Lucca
 
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -95,6 +113,7 @@ class Brain:
         self.script = prompts.load_script()
         self.deadline_s = self.DEADLINE_S
         self.demo_deadline_s = self.DEMO_DEADLINE_S
+        self.story_deadline_s = self.STORY_DEADLINE_S
 
     def warm(self) -> None:
         """Load gpt-oss now and keep it loaded (an empty chat loads the model, generates nothing)."""
@@ -117,7 +136,8 @@ class Brain:
         worker = threading.Thread(target=self._work, args=(history, name, camera, personality, note, out, stop),
                                   name="houston-brain", daemon=True)
         worker.start()
-        deadline = time.monotonic() + (self.demo_deadline_s if is_demo(history) else self.deadline_s)
+        long = self.demo_deadline_s if is_demo(history) else self.story_deadline_s if is_story(history) else None
+        deadline = time.monotonic() + (long or self.deadline_s)
         said = False
         try:
             while True:
@@ -155,7 +175,9 @@ class Brain:
             yield from self._look(question, name, camera, personality, stop)
             return
         demo = is_demo(history)
-        messages = [{"role": "system", "content": prompts.system(name, self.facts, personality, demo, self.script, note)}]
+        story = not demo and is_story(history)
+        messages = [{"role": "system", "content": prompts.system(name, self.facts, personality, demo, self.script,
+                                                                 note, story)}]
         messages += [dict(m) for m in history[-HISTORY_TURNS:]]
         think = self.settings.think
         for _ in range(MAX_TOOL_ROUNDS + 1):
@@ -165,8 +187,10 @@ class Brain:
                 calls += msg.get("tool_calls") or []
                 content += msg.get("content") or ""
                 thinking += msg.get("thinking") or ""  # echoed back to the model, never spoken
-                yield from splitter.push(msg.get("content") or "")
-            yield from splitter.flush()
+                for sentence in splitter.push(msg.get("content") or ""):
+                    yield from effects.split(sentence)
+            for sentence in splitter.flush():
+                yield from effects.split(sentence)
             if not calls:
                 return
             for call in calls:

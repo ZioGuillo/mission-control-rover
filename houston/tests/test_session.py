@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from houston import effects
 from houston.brain import Brain
 from houston.config import Rover, Settings
 from houston.rover_link import LinkError
@@ -978,3 +979,15 @@ def test_what_time_is_it_is_said_by_houston():
     s.handle(utter("Hey Fred, ¿qué hora es?"))
     assert "[Son la una y cinco de la tarde.]" in s.link.played()
     assert brain.calls == []
+
+
+def test_story_sounds_are_played_not_spoken_or_remembered():
+    loaded = []
+    brain = FakeBrain(["Había una vez un dragón.", effects.MARK + "rugido", "Fin."], ["Sí."])
+    s = make(brain=brain)
+    s._load_sound = lambda path: (loaded.append(path.name), b"<" + path.stem.encode() + b">")[1]
+    s.handle(utter("Hey Fred, cuéntame un cuento"))
+    assert loaded == ["rugido.wav"]
+    assert s.link.played() == ["<beep in>", "[Había una vez un dragón.]", "<rugido>", "[Fin.]", "<beep out>"]
+    s.handle(utter("¿Te gustó?"))
+    assert brain.calls[1][0][1] == {"role": "assistant", "content": "Había una vez un dragón. Fin."}

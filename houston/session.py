@@ -16,6 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
+from houston import effects
 from houston import voice as voice_mod
 from houston.brain import Brain, is_demo
 from houston.diag import Diag
@@ -329,14 +330,14 @@ class RoverSession:
         if end is None or item is not _END:
             return
 
-        answer = " ".join(s for s in spoken if s != Brain.FAILURE)
+        answer = " ".join(s for s in spoken if s != Brain.FAILURE and not effects.sound(s))
         if answer:
             self.history.append({"role": "assistant", "content": answer})
             del self.history[:-HISTORY_MESSAGES]
             self.time.answered(end - t0, demo)
         elif self.history and self.history[-1]["content"] == question:
             self.history.pop()  # failed turn: keep no dangling question
-        log.info("%s answer: %s", self.name, " ".join(spoken))
+        log.info("%s answer: %s", self.name, " ".join(spoken).replace(effects.MARK, "♪"))
         self._last_turn = self.clock()
         first_sentence = times.get("first_sentence", end)
         first_audio = pb.first_answer if pb.first_answer is not None else end
@@ -363,7 +364,9 @@ class RoverSession:
                 times.setdefault("first_sentence", self.clock())
                 if cancel.is_set():
                     return  # dead answer: don't hold the Voice lock for it
-                if sentence == Brain.FAILURE:
+                if effects.sound(sentence):
+                    pcm = self._filler(effects.sound(sentence))  # a story's roar: a sound, not words
+                elif sentence == Brain.FAILURE:
                     pcm = self._phrase(sentence)
                 else:
                     pcm = self.voice.synth(sentence, self.rover.voice)

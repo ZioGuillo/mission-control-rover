@@ -52,9 +52,9 @@ def _persona(name: str, personality: str = "", brief: bool = True) -> str:
 
 
 def system(name: str, facts: str, personality: str = "", demo: bool = False, script: str = "",
-           note: str = "") -> str:
+           note: str = "", story: bool = False) -> str:
     return (
-        _persona(name, personality, brief=not demo) + " Te encanta hablar de Marte, la NASA, el JPL y la exploración espacial.\n\n"
+        _persona(name, personality, brief=not (demo or story)) + " Te encanta hablar de Marte, la NASA, el JPL y la exploración espacial.\n\n"
         "Hoja de datos verificada (úsala antes que tu memoria; si un dato no está aquí y no lo "
         "sabes con certeza, o es muy reciente, dilo con honestidad en vez de inventar. Si das un número "
         "que no está en la hoja ni viene de una herramienta de la NASA, dilo como aproximado o di que "
@@ -70,6 +70,7 @@ def system(name: str, facts: str, personality: str = "", demo: bool = False, scr
         "llama a mirar; nunca describas tu entorno sin haberla usado."
         + (_DEMO if demo else "")
         + (_DEMO_SCRIPT + script + _DEMO_REMINDER if demo and script else "")
+        + (_STORY if story else "")
         + note
     )
 
@@ -108,6 +109,21 @@ _DEMO_SCRIPT = (
     "tercera persona, y sus frases clave dilas como citas de él. Los títulos (## Slide) son solo "
     "para el orden; no los leas.\n"
 )
+_STORY = (
+    "\n\nAhora te pidieron un cuento (o dijeron que sí al que ofreciste): cuéntalo tú, en voz alta, "
+    "como un cuento para un niño antes de dormir. Que sea largo, de unos diez minutos: unas mil "
+    "quinientas palabras, en cinco partes que fluyen una tras otra, sin títulos. Que sea del tema que "
+    "pidan (si no dicen, de dragones), divertido, emocionante, tierno y nada aterrador: los dragones "
+    "pueden ser enormes y rugir, pero son amigos o se vuelven amigos. Si es para Lucca, que Lucca sea "
+    "el héroe valiente y tú, Bentley, su compañero perruno. Frases cortas y claras, con voces de los "
+    "personajes, sonidos de onomatopeya y alguna pregunta al aire para él, sin esperar respuesta. "
+    "Para los efectos de sonido escribe exactamente una de estas marcas donde debe sonar: [rugido], "
+    "[alas], [fuego], [trueno], [magia], [ladrido]; unas doce en todo el cuento, repartidas, cada una "
+    "sola entre dos frases. Nunca leas ni expliques las marcas. Termina con un final feliz y una "
+    "despedida cariñosa. Aquí no aplica el límite de dos frases."
+)
+
+
 # After the script, so it's the last thing read: with it, Bentley copied Pablo's "me llamo Pablo".
 _DEMO_REMINDER = (
     "\n\nRecuerda: quien habla en el escenario eres tú, el rover, no Pablo. Cuando empieces por el "
