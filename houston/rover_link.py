@@ -150,6 +150,11 @@ class RoverLink:
         """Linux's id for this boot: it changes every time the rover restarts."""
         return self._output("cat /proc/sys/kernel/random/boot_id").strip()
 
+    def set_volume(self, percent: int) -> None:
+        """The USB speaker's PCM volume, e.g. 70 for -9.2 dB on Bentley's UACDemoV10."""
+        _, spk = self.detect()
+        self._output(f"amixer -q -c {spk} sset PCM {int(percent)}%")
+
     def detect(self) -> tuple[str, str]:
         if self._cards is None:
             mic, spk = pick_usb(self._list("arecord")), pick_usb(self._list("aplay"))

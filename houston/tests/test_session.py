@@ -104,12 +104,19 @@ class FakeLink:
         self.mics = list(mics)  # FakeProc or exception, one per mic() call
         self.procs: list[FakeProc] = []
         self.boots = ["boot-1"]  # boot_id per call; the last one repeats
+        self.volumes: list[int] = []
+        self.volume_error = None
 
     def detect(self):
         return ("Device", "UACDemoV10")
 
     def boot_id(self):
         return self.boots.pop(0) if len(self.boots) > 1 else self.boots[0]
+
+    def set_volume(self, percent):
+        if self.volume_error:
+            raise self.volume_error
+        self.volumes.append(percent)
 
     def mic(self):
         if not self.mics:
@@ -687,6 +694,19 @@ def test_rover_back_from_a_reboot_is_no_longer_resting(boots, away, state):
     link.boots = list(boots)
     s = run_paused(Clock(), link, away)
     assert s.state == state
+
+
+@pytest.mark.parametrize("volume, error, expected", [
+    (70, None, [70]),                       # set on connect (the speaker boots at 100 %)
+    (None, None, []),                       # no setting: left alone
+    (70, LinkError("amixer: no PCM"), [])])  # a failure is logged, the rover still listens
+def test_speaker_volume_is_set_on_connect(volume, error, expected):
+    link = FakeLink(mics=[FakeProc()])
+    link.volume_error = error
+    s = make(link=link)
+    s.rover = dataclasses.replace(s.rover, speaker_volume=volume)
+    s._back()
+    assert link.volumes == expected
 
 
 # ---------------------------------------------------------------- fix round 1

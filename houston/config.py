@@ -26,6 +26,9 @@ class Rover:
     personality: str = ""
     # Optional sound played instead of the second filler line (Bentley: two soft barks).
     filler_sound: Path | None = None
+    # Speaker volume in percent, set on every connection: amixer changes don't survive a reboot
+    # unless stored with sudo (Bentley's speaker boots at 100 %, too loud).
+    speaker_volume: int | None = None
 
     @property
     def camera_url(self) -> str:

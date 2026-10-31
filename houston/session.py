@@ -455,6 +455,11 @@ class RoverSession:
         except LinkError as e:
             log.warning("%s: no boot id: %s", self.name, e)
             boot = None
+        if self.rover.speaker_volume is not None:
+            try:
+                self.link.set_volume(self.rover.speaker_volume)
+            except LinkError as e:
+                log.warning("%s: volume not set: %s", self.name, e)
         rebooted = bool(boot and self._boot_id and boot != self._boot_id)
         self._boot_id = boot or self._boot_id
         if self._state == PAUSED and (rebooted or (away is not None and away >= AWAY_CLEARS_PAUSE_S)):

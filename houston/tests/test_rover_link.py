@@ -261,6 +261,19 @@ def test_link_speaker_passes_prelude():
     assert procs[0].stdin.data == b"BEEP"
 
 
+def test_set_volume_sets_the_speaker_cards_pcm():
+    calls = []
+
+    def run(cmd, **kw):
+        calls.append(cmd[-1])
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    link = RoverLink("r", run=run)
+    link._cards = ("Device", "UACDemoV10")
+    link.set_volume(70)
+    assert calls == ["amixer -q -c UACDemoV10 sset PCM 70%"]
+
+
 def test_boot_id_reads_the_rovers_boot():
     calls = []
 
