@@ -41,6 +41,13 @@ PORTAL_SSID="${PORTAL_SSID:-RoboCar-Setup}"
 echo "[wifi-connect-fallback] No connection after ${WAIT_SECONDS}s — starting the captive portal"
 echo "[wifi-connect-fallback] Connect to WiFi '${PORTAL_SSID}' from your phone, then open any webpage"
 
+# balena publishes no wifi-connect build for ARMv6 (Pi Zero W), so install.sh
+# skips it there: use the repo's own portal instead (open network, same SSID).
+if [ ! -x /usr/local/sbin/wifi-connect ]; then
+    export PORTAL_SSID
+    exec /usr/bin/python3 "$(dirname "$(readlink -f "$0")")/wifi_portal.py"
+fi
+
 if [ -n "${PORTAL_PASSPHRASE:-}" ]; then
     exec /usr/local/sbin/wifi-connect \
         --ui-directory /usr/local/share/wifi-connect/ui \

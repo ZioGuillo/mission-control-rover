@@ -313,6 +313,8 @@ if ! command -v wifi-connect &>/dev/null; then
     case "$ARCH" in
         aarch64) WFC_TARGET="aarch64-unknown-linux-gnu"        ;;
         armv7l)  WFC_TARGET="armv7-unknown-linux-gnueabihf"    ;;
+        armv6l)   echo "  No wifi-connect build for ARMv6 (Pi Zero W) — the portal uses scripts/wifi_portal.py"
+                  WFC_TARGET="" ;;
         *)        echo "  Unknown arch $ARCH — skipping wifi-connect install"
                   WFC_TARGET="" ;;
     esac
