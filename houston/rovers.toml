@@ -40,8 +40,10 @@ frases."""
 [[rover]]
 name = "Eva"  # wake word "Hey Eva" / "Oye Eva" (not "Eva" alone: people are called that)
 unit = 1
-ssh = "ec2-user@192.168.1.53"  # Pi Zero W, hostname robocontrol
-app_url = "http://192.168.1.53:8000"
+# By mDNS name, not IP: on another network (hotspot, CITIC) Eva gets another address.
+# The Mac must be on the same network; at home robocontrol.local = 192.168.1.53.
+ssh = "ec2-user@robocontrol.local"  # Pi Zero W, hostname robocontrol
+app_url = "http://robocontrol.local:8000"
 app_user = "eva"
 password_file = "~/.config/houston/eva_password"
 voice = "ef_dora"  # Kokoro, Spanish female (picked 2026-11-14)
