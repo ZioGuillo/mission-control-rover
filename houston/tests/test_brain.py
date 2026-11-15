@@ -400,6 +400,15 @@ def test_demo_prompt_has_bentley_give_the_talk_himself():
     assert "Tú no eres Pablo" in demo and "escenario" not in normal
 
 
+def test_story_and_demo_name_the_rover_telling_them():
+    # Eva joined 2026-11-14: she must not introduce herself as Bentley or tell the story as him.
+    facts = prompts.load_facts()
+    demo = prompts.system("Eva", facts, demo=True, script="## Slide 1\nHola.")
+    story = prompts.system("Eva", facts, story=True)
+    assert "soy Eva, el rover de Pablo" in demo and "tú, Eva," in story
+    assert "Bentley" not in demo and "Bentley" not in story
+
+
 def test_demo_gets_the_demo_prompt_and_a_longer_deadline(ollama):
     hold = threading.Event()
     fake = ollama([say("Buenos días a todos. "), hold, say("Me llamo Pablo."), DONE])

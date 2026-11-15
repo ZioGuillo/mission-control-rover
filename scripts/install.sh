@@ -498,6 +498,11 @@ SERVICE_DST=/etc/systemd/system/robocontrol.service
 sudo cp "$SERVICE_SRC" "$SERVICE_DST"
 sudo sed -i "s|/home/pi/robocontrol|$REPO_DIR|g" "$SERVICE_DST"
 sudo sed -i "s|User=pi|User=$CURRENT_USER|g"      "$SERVICE_DST"
+# MemoryLimit= is only for cgroup v1 (Jetson); on cgroup v2 (current Raspberry Pi
+# OS) MemoryMax= does the job and MemoryLimit= just logs a deprecation warning.
+if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
+    sudo sed -i "/^MemoryLimit=/d" "$SERVICE_DST"
+fi
 sudo systemctl daemon-reload
 sudo systemctl enable robocontrol
 # restart, not start: on a re-install the service is already running the

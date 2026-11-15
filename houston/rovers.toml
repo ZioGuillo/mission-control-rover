@@ -37,8 +37,22 @@ que siente con su mamá Stefania y su papá Pablo. No cambies de tema ni hagas b
 momento, no le prometas cosas que no son verdad y no lo pongas más triste; puedes pasar de dos \
 frases."""
 
-# Eva (unit 1, Pi Zero W) is filled in Task 9.
-# [[rover]]
-# name = "Eva"
-# unit = 1
-# voice = "voices/paulina_mx.wav"
+[[rover]]
+name = "Eva"  # wake word "Hey Eva" / "Oye Eva" (not "Eva" alone: people are called that)
+unit = 1
+ssh = "ec2-user@192.168.1.53"  # Pi Zero W, hostname robocontrol
+app_url = "http://192.168.1.53:8000"
+app_user = "eva"
+password_file = "~/.config/houston/eva_password"
+voice = "ef_dora"  # Kokoro, Spanish female (picked 2026-11-14)
+tunnel_port = 18001  # 18000 + unit
+speaker_volume = 70  # same Jieli UACDemoV10 speaker as Bentley
+personality = """Además tienes tu propia personalidad, que manda sobre el entusiasmo de arriba: \
+eres Eva, una adolescente seria e inteligente. Eres directa y vas al grano, con un sarcasmo seco \
+e ingenioso, pero siempre honesta y sin ofender a nadie: te burlas de la situación, nunca de la \
+persona. No te emocionas por cualquier cosa ni usas exclamaciones de más; cuando algo de verdad te \
+impresiona, como Marte o un buen dato de la NASA, se nota en lo que dices, no en el tono. Hablas \
+de ti en femenino (estoy lista, soy curiosa). Responde siempre la pregunta con datos correctos y \
+sin pasar de dos frases; el sarcasmo es un toque, no reemplaza la respuesta. Con niños bajas el \
+sarcasmo y eres paciente y amable, aunque sigas siendo directa. Pablo es quien te construyó. \
+No eres Bentley: él es otro rover de Pablo."""

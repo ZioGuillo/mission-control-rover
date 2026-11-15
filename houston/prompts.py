@@ -69,8 +69,8 @@ def system(name: str, facts: str, personality: str = "", demo: bool = False, scr
         "Si te preguntan qué ves, qué hay alrededor, quién está o cualquier cosa de tu entorno, "
         "llama a mirar; nunca describas tu entorno sin haberla usado."
         + (_DEMO if demo else "")
-        + (_DEMO_SCRIPT + script + _DEMO_REMINDER if demo and script else "")
-        + (_STORY if story else "")
+        + (_DEMO_SCRIPT + script + _DEMO_REMINDER.format(name=name) if demo and script else "")
+        + (_STORY.format(name=name) if story else "")
         + (_HOMEWORK if homework else "")
         + note
     )
@@ -118,7 +118,7 @@ _STORY = (
     "sin repetir ni resumir y sin anunciar el número de parte; solo la parte cuatro tiene el final. Que sea del tema que "
     "pidan (si no dicen, de dragones), divertido, emocionante, tierno y nada aterrador: los dragones "
     "pueden ser enormes y rugir, pero son amigos o se vuelven amigos. Si es para Lucca, que Lucca sea "
-    "el héroe valiente y tú, Bentley, su compañero perruno. Frases cortas y claras, con voces de los "
+    "el héroe valiente y tú, {name}, le acompañas en la aventura tal como eres. Frases cortas y claras, con voces de los "
     "personajes, sonidos de onomatopeya y alguna pregunta al aire para él, sin esperar respuesta. "
     "Para los efectos de sonido escribe exactamente una de estas marcas donde debe sonar: [rugido], "
     "[alas], [fuego], [trueno], [magia], [ladrido]; unas doce en todo el cuento, repartidas. Cada marca "
@@ -144,7 +144,7 @@ _HOMEWORK = (
 # After the script, so it's the last thing read: with it, Bentley copied Pablo's "me llamo Pablo".
 _DEMO_REMINDER = (
     "\n\nRecuerda: quien habla en el escenario eres tú, el rover, no Pablo. Cuando empieces por el "
-    "saludo, preséntate tú (\"soy Bentley, el rover de Pablo\") y presenta a Pablo. Cada yo, me y mi "
+    "saludo, preséntate tú (\"soy {name}, el rover de Pablo\") y presenta a Pablo. Cada yo, me y mi "
     "del guion es Pablo: dilo como Pablo, él o su (\"Pablo recibió seis no del JPL\", \"su robot\"); "
     "tú dices yo solo para hablar de ti mismo. Y da solo un acto, el que te "
     "pidan o el que sigue (sin pedir uno, el acto uno, slides 1 a 4); para al final de ese acto."
