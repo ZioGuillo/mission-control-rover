@@ -5,7 +5,9 @@ Wants=NetworkManager.service
 
 [Service]
 Type=oneshot
-ExecStart=/home/pi/robocontrol/scripts/wifi-watchdog.sh
+# Runs as root, so it runs a root-owned copy installed by scripts/install.sh,
+# not the repo file, which the app's user could edit (security audit 2026-11-15).
+ExecStart=/usr/local/sbin/robocontrol-wifi-watchdog.sh
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=wifi-watchdog

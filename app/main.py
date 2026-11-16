@@ -17,7 +17,7 @@ from starlette.middleware.sessions import SessionMiddleware
 import app.routes as _routes_pkg
 from app.config import settings
 from app.hardware import servo_driver, rrb3_driver as driver, camera_driver, ml_driver, gpu_info, board_info, voice
-from app.security import client_ip, rate_limiter
+from app.security import client_ip, is_local_scrape, rate_limiter
 from app.templates_env import templates
 from app import db, metrics as m
 
@@ -66,7 +66,7 @@ app = FastAPI(lifespan=lifespan)
 _https_only = settings.base_url.startswith("https://") if settings.base_url else False
 app.add_middleware(SessionMiddleware, secret_key=settings.session_secret_key, https_only=_https_only)
 
-_PUBLIC_PATHS = {"/login", "/auth/github", "/auth/callback", "/api/ping", "/metrics"}
+_PUBLIC_PATHS = {"/login", "/auth/github", "/auth/callback", "/api/ping"}
 _signer = itsdangerous.TimestampSigner(settings.session_secret_key)
 
 
@@ -113,6 +113,15 @@ _SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",            # no clickjacking the drive controls
     "Referrer-Policy": "same-origin",
+    # Pages use inline scripts/handlers and the Pico stylesheet from jsDelivr;
+    # user icons can be GitHub avatars. Nothing else loads from outside.
+    "Content-Security-Policy": (
+        "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "img-src 'self' data: blob: https://avatars.githubusercontent.com; "
+        "connect-src 'self'; object-src 'none'; base-uri 'self'; "
+        "form-action 'self'; frame-ancestors 'none'"
+    ),
 }
 
 
@@ -128,18 +137,21 @@ async def security_headers(request: Request, call_next):
 async def auth_guard(request: Request, call_next):
     path = request.url.path
 
-    if path.startswith("/static") or path in _PUBLIC_PATHS:
-        return await call_next(request)
-
-    # Brute-force protection on login: 10 tries a minute per address (it
-    # was 5 a second — 400 000 guesses a day).
+    # Brute-force protection on login: 10 failed tries a minute per address
+    # (the login route records the failures). Checked before the public-path
+    # pass-through below — /login is public, and it once skipped this.
     if path == "/login" and request.method == "POST":
-        if not rate_limiter.is_allowed(f"login:{client_ip(request)}", 10, window=60):
+        if rate_limiter.is_blocked(f"login:{client_ip(request)}", 10, window=60):
             m.RATE_LIMIT_HITS_TOTAL.labels(endpoint="login").inc()
             return JSONResponse(
                 {"ok": False, "message": "Too many login attempts — please wait"},
                 status_code=429,
             )
+
+    if path.startswith("/static") or path in _PUBLIC_PATHS:
+        return await call_next(request)
+    if path == "/metrics" and is_local_scrape(request):
+        return await call_next(request)
 
     token = _get_session_token(request)
     user = db.get_session_user(token) if token else None

@@ -10,7 +10,9 @@ Type=simple
 # PORTAL_SSID / PORTAL_PASSPHRASE in .env override the wrapper script's
 # defaults (SSID "RoboCar-Setup", no passphrase) — see .env.example.
 EnvironmentFile=-/home/pi/robocontrol/.env
-ExecStart=/home/pi/robocontrol/scripts/wifi-connect-wrapper.sh
+# Runs as root, so it runs a root-owned copy installed by scripts/install.sh,
+# not the repo file, which the app's user could edit (security audit 2026-11-15).
+ExecStart=/usr/local/sbin/robocontrol-wifi-connect.sh
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal

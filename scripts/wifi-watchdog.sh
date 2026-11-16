@@ -18,16 +18,24 @@ WIFI_DEV="$(nmcli -t -f DEVICE,TYPE device 2>/dev/null | awk -F: '$2=="wifi"{pri
 
 STATE="$(nmcli -t -f DEVICE,STATE device 2>/dev/null | awk -F: -v d="$WIFI_DEV" '$1==d{print $2}')"
 
-# When WiFi went down, so a rover that stays offline (taken to a new place,
-# saved networks out of reach) opens the setup portal without a reboot.
+# When WiFi went down, so a rover still offline after a while opens the
+# setup portal without a reboot — but only if it hasn't joined a network since
+# boot (taken to a new place, saved networks out of reach). Once it has been
+# online, a drop doesn't open the portal: otherwise anyone nearby could knock
+# it off the WiFi on purpose (deauth) and use the portal to move it onto their
+# own network (security audit 2026-11-15). /run is cleared on every boot.
 DOWN_SINCE=/run/robocontrol-wifi-down-since
+JOINED=/run/robocontrol-wifi-joined
 PORTAL_AFTER_SECONDS=180
 
 # "connected" (also covers hotspot mode while the captive portal runs) and
 # in-progress states like "connecting (...)" are left alone.
 case "$STATE" in
     disconnected) ;;
-    connected*) rm -f "$DOWN_SINCE"; exit 0 ;;
+    connected*)
+        rm -f "$DOWN_SINCE"
+        systemctl is-active --quiet wifi-connect-fallback || touch "$JOINED"
+        exit 0 ;;
     *) exit 0 ;;
 esac
 
@@ -44,11 +52,14 @@ sleep 5
 if nmcli device connect "$WIFI_DEV"; then
     echo "[wifi-watchdog] reconnected"
     rm -f "$DOWN_SINCE"
+    touch "$JOINED"
     exit 0
 fi
 
 DOWN_FOR=$(( $(date +%s) - $(cat "$DOWN_SINCE") ))
-if [ "$DOWN_FOR" -ge "$PORTAL_AFTER_SECONDS" ]; then
+if [ -f "$JOINED" ]; then
+    echo "[wifi-watchdog] reconnect failed — will retry next run (no portal: already online since boot; reboot to get it)"
+elif [ "$DOWN_FOR" -ge "$PORTAL_AFTER_SECONDS" ]; then
     echo "[wifi-watchdog] offline for ${DOWN_FOR}s — opening the WiFi setup portal"
     rm -f "$DOWN_SINCE"  # the portal closes itself when idle; then the count starts over
     systemctl start --no-block wifi-connect-fallback

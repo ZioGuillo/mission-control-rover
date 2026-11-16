@@ -44,6 +44,15 @@ def test_page_without_networks_asks_for_a_name():
     assert "Escribe el nombre" in wifi_portal.render_page([])
 
 
+def test_portal_network_is_wpa2_with_a_passphrase_and_open_without():
+    assert wifi_portal.hotspot_security("") == []
+    sec = wifi_portal.hotspot_security("robocar2026")
+    assert sec[sec.index("wifi-sec.key-mgmt") + 1] == "wpa-psk"
+    assert sec[sec.index("wifi-sec.psk") + 1] == "robocar2026"
+    with pytest.raises(ValueError):
+        wifi_portal.hotspot_security("corta")
+
+
 @pytest.mark.parametrize("signal,expected", [(10, "▂"), (40, "▂▄"), (60, "▂▄▆"), (90, "▂▄▆█")])
 def test_signal_bars(signal, expected):
     assert wifi_portal.bars(signal) == expected

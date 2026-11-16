@@ -42,10 +42,11 @@ echo "[wifi-connect-fallback] No connection after ${WAIT_SECONDS}s — starting 
 echo "[wifi-connect-fallback] Connect to WiFi '${PORTAL_SSID}' from your phone, then open any webpage"
 
 # balena publishes no wifi-connect build for ARMv6 (Pi Zero W), so install.sh
-# skips it there: use the repo's own portal instead (open network, same SSID).
+# skips it there: use the repo's own portal instead (same SSID; WPA2 when
+# PORTAL_PASSPHRASE is set). install.sh puts a root-owned copy next to this one.
 if [ ! -x /usr/local/sbin/wifi-connect ]; then
-    export PORTAL_SSID
-    exec /usr/bin/python3 "$(dirname "$(readlink -f "$0")")/wifi_portal.py"
+    export PORTAL_SSID PORTAL_PASSPHRASE="${PORTAL_PASSPHRASE:-}"
+    exec /usr/bin/python3 /usr/local/sbin/robocontrol-wifi-portal.py
 fi
 
 if [ -n "${PORTAL_PASSPHRASE:-}" ]; then

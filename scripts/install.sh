@@ -295,6 +295,10 @@ fi
 
 # ── WiFi provisioning service ─────────────────────────────────────────
 echo "→ Installing wifi-provision.service"
+# The WiFi services run as root: they get root-owned copies in /usr/local/sbin,
+# never the repo files, which the app's user could edit. Re-run install.sh
+# after changing one of these scripts.
+sudo install -o root -g root -m 755 "$REPO_DIR/scripts/wifi_provision.sh" /usr/local/sbin/robocontrol-wifi-provision.sh
 sudo cp "$REPO_DIR/scripts/wifi-provision.service" /etc/systemd/system/wifi-provision.service
 sudo sed -i "s|/home/pi/robocontrol|$REPO_DIR|g"  /etc/systemd/system/wifi-provision.service
 sudo sed -i "s|User=pi|User=$CURRENT_USER|g"       /etc/systemd/system/wifi-provision.service
@@ -335,6 +339,8 @@ else
 fi
 
 echo "→ Installing wifi-connect-fallback.service"
+sudo install -o root -g root -m 755 "$REPO_DIR/scripts/wifi-connect-wrapper.sh" /usr/local/sbin/robocontrol-wifi-connect.sh
+sudo install -o root -g root -m 755 "$REPO_DIR/scripts/wifi_portal.py" /usr/local/sbin/robocontrol-wifi-portal.py
 sudo cp "$REPO_DIR/scripts/wifi-connect-fallback.service" /etc/systemd/system/wifi-connect-fallback.service
 sudo sed -i "s|/home/pi/robocontrol|$REPO_DIR|g" /etc/systemd/system/wifi-connect-fallback.service
 sudo systemctl daemon-reload
@@ -347,7 +353,7 @@ echo "   you're clearly already connected if you're running this over SSH)"
 # reconnect handshake times out, NetworkManager can mark the saved network
 # 'no-secrets' and never retry — see scripts/wifi-watchdog.sh.
 echo "→ Installing wifi-watchdog.timer"
-chmod +x "$REPO_DIR/scripts/wifi-watchdog.sh"
+sudo install -o root -g root -m 755 "$REPO_DIR/scripts/wifi-watchdog.sh" /usr/local/sbin/robocontrol-wifi-watchdog.sh
 sudo cp "$REPO_DIR/scripts/wifi-watchdog.service" /etc/systemd/system/wifi-watchdog.service
 sudo cp "$REPO_DIR/scripts/wifi-watchdog.timer"   /etc/systemd/system/wifi-watchdog.timer
 sudo sed -i "s|/home/pi/robocontrol|$REPO_DIR|g" /etc/systemd/system/wifi-watchdog.service

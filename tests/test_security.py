@@ -154,6 +154,47 @@ def test_forwarded_client_ip_only_trusted_from_the_tunnel():
     assert client_ip(Req("127.0.0.1", {})) == "127.0.0.1"
 
 
+def test_failed_logins_are_rate_limited(tmp_path, monkeypatch):
+    # Audit 2026-11-15: /login is a public path, and the guard let public paths
+    # through before the limit — 12 wrong passwords in a row all went through.
+    from app.security import rate_limiter
+    rate_limiter._windows.clear()
+    c = _unauthenticated_client(tmp_path, monkeypatch)
+    codes = [c.post("/login", data={"username": "nadie", "password": f"x{i}"}).status_code
+             for i in range(11)]
+    rate_limiter._windows.clear()
+    assert codes[:10] == [302] * 10 and codes[10] == 429
+
+
+def test_successful_logins_do_not_use_up_the_limit(tmp_path, monkeypatch):
+    from app.security import rate_limiter
+    rate_limiter._windows.clear()
+    c = _unauthenticated_client(tmp_path, monkeypatch)
+    codes = [c.post("/login", data={"username": "admin", "password": "admin"}).status_code
+             for _ in range(12)]
+    rate_limiter._windows.clear()
+    assert codes == [302] * 12
+
+
+def test_metrics_only_for_local_scrapers(tmp_path, monkeypatch):
+    # Prometheus-style scrapes from the robot itself stay open; from the network
+    # (or through the Cloudflare tunnel, which also arrives from loopback) they
+    # need a login, like the rest of the app.
+    c = _unauthenticated_client(tmp_path, monkeypatch)
+    assert c.get("/metrics").status_code == 302
+    from app.main import app
+    local = TestClient(app, follow_redirects=False, client=("127.0.0.1", 50000))
+    assert local.get("/metrics").status_code == 200
+    assert local.get("/metrics", headers={"cf-connecting-ip": "1.2.3.4"}).status_code == 302
+
+
+def test_responses_carry_a_content_security_policy(client):
+    csp = client.get("/api/ping").headers["Content-Security-Policy"]
+    assert "default-src 'self'" in csp
+    assert "frame-ancestors 'none'" in csp and "object-src 'none'" in csp
+    assert "https://cdn.jsdelivr.net" in csp  # the Pico stylesheet
+
+
 def test_responses_carry_security_headers(client):
     r = client.get("/api/ping")
     assert r.headers["X-Content-Type-Options"] == "nosniff"

@@ -6,6 +6,7 @@ from fastapi.responses import RedirectResponse
 from app import auth, db, metrics as m
 from app.config import settings
 from app.hardware import board_info
+from app.security import client_ip, rate_limiter
 from app.templates_env import templates
 
 
@@ -38,6 +39,7 @@ async def login(
     user = db.get_user_by_username(username)
     if not user or not db.verify_password(password, user["password_hash"] or ""):
         m.LOGIN_ATTEMPTS_TOTAL.labels(result="failure").inc()
+        rate_limiter.record(f"login:{client_ip(request)}")  # checked in app.main's auth guard
         return RedirectResponse("/login?status=invalid", status_code=302)
     m.LOGIN_ATTEMPTS_TOTAL.labels(result="success").inc()
     token = db.create_session(user["id"])

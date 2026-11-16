@@ -34,6 +34,8 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PORTAL_SSID = os.environ.get("PORTAL_SSID") or "RoboCar-Setup"
+# WPA2 passphrase for the portal network (8+ characters); empty = open network.
+PORTAL_PASSPHRASE = os.environ.get("PORTAL_PASSPHRASE") or ""
 PORTAL_CON = "robocar-portal"
 GATEWAY = "10.42.0.1"  # NetworkManager's default for ipv4.method=shared
 DNS_CONF = "/etc/NetworkManager/dnsmasq-shared.d/robocar-portal.conf"
@@ -171,9 +173,21 @@ def start_hotspot(dev: str) -> None:
     nmcli("connection", "add", "type", "wifi", "ifname", dev, "con-name", PORTAL_CON,
           "autoconnect", "no", "ssid", PORTAL_SSID, "802-11-wireless.mode", "ap",
           "802-11-wireless.band", "bg", "ipv4.method", "shared",
-          "ipv4.addresses", f"{GATEWAY}/24", "ipv6.method", "disabled")
+          "ipv4.addresses", f"{GATEWAY}/24", "ipv6.method", "disabled",
+          *hotspot_security(PORTAL_PASSPHRASE))
     nmcli("connection", "up", PORTAL_CON, timeout=60)
-    log(f"portal up: open network '{PORTAL_SSID}', page at http://{GATEWAY}/")
+    kind = "WPA2" if PORTAL_PASSPHRASE else "open"
+    log(f"portal up: {kind} network '{PORTAL_SSID}', page at http://{GATEWAY}/")
+
+
+def hotspot_security(passphrase: str) -> list[str]:
+    """nmcli settings for the portal network: WPA2 with a passphrase, open without."""
+    if not passphrase:
+        return []
+    if len(passphrase) < 8:
+        raise ValueError("PORTAL_PASSPHRASE needs 8+ characters (WPA2)")
+    return ["wifi-sec.key-mgmt", "wpa-psk", "wifi-sec.proto", "rsn",
+            "wifi-sec.pairwise", "ccmp", "wifi-sec.group", "ccmp", "wifi-sec.psk", passphrase]
 
 
 def stop_hotspot() -> None:
