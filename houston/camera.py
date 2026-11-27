@@ -11,6 +11,9 @@ from pathlib import Path
 
 _MAX_BYTES = 2 * 1024 * 1024
 _CHUNK = 16 * 1024
+# Logging in hashes the password on the rover: 7.2 s on Sofi's Pi Zero W (2026-11-26), more
+# than a whole snapshot's budget. The login gets its own time; the frames after it take < 1 s.
+LOGIN_TIMEOUT_S = 20.0
 _SOI, _EOI = b"\xff\xd8", b"\xff\xd9"
 
 
@@ -36,11 +39,15 @@ class AppCamera:
         deadline = time.monotonic() + timeout
         jpeg = self._grab(deadline)
         if jpeg is None:  # not logged in or session expired: log in once, retry once
-            self._login(deadline)
-            jpeg = self._grab(deadline)
+            self._login(time.monotonic() + LOGIN_TIMEOUT_S)
+            jpeg = self._grab(time.monotonic() + timeout)
             if jpeg is None:
                 raise CameraError("app keeps redirecting to /login after login")
         return jpeg
+
+    def login(self, timeout: float = LOGIN_TIMEOUT_S) -> None:
+        """Log in ahead of the first "¿qué ves?", so it doesn't wait for a slow rover's login."""
+        self._login(time.monotonic() + timeout)
 
     def _open(self, req: urllib.request.Request, deadline: float):
         remaining = deadline - time.monotonic()

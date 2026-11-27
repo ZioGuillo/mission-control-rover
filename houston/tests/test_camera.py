@@ -236,3 +236,23 @@ def test_chunked_stream_cut_mid_frame_raises(fake, pwfile):
     app = fake(chunked=True, stream_body=b"--frame\r\n\r\n\xff\xd8half-a-frame")
     with pytest.raises(CameraError):
         AppCamera(app.url, "rover", pwfile).snapshot()
+
+
+def test_slow_login_gets_its_own_time(fake, pwfile, monkeypatch):
+    # Sofi's Pi Zero takes 7 s to log in, more than a snapshot's budget (2026-11-26).
+    app = fake()
+    real_login = AppCamera._login
+    def slow_login(self, deadline):
+        assert deadline - time.monotonic() > 5  # not squeezed into the 1 s snapshot budget
+        real_login(self, deadline)
+    monkeypatch.setattr(AppCamera, "_login", slow_login)
+    assert AppCamera(app.url, "rover", pwfile).snapshot(timeout=1).startswith(b"\xff\xd8")
+
+
+def test_login_ahead_then_snapshot_needs_no_login(fake, pwfile):
+    app = fake()
+    cam = AppCamera(app.url, "rover", pwfile)
+    cam.login()
+    assert app.logins == 1
+    cam.snapshot(timeout=2)
+    assert app.logins == 1
