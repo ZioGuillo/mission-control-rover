@@ -16,11 +16,12 @@ class Heard(NamedTuple):
 _VARIANTS = {
     "fred": ["fred", "fret", "frey", "freddy", "fredi"],
     "eva": ["eva", "heva", "iva"],
+    "sofi": ["sofi", "sofí", "sofy", "sophie", "sophi", "sophy", "zofi", "sofie"],  # Eva since 2026-11-26
     "bentley": ["bentley", "bently", "benley", "bentli", "bentlee", "ventley", "bendley", "vently",
                 "benli", "benlee", "venli"],  # Pablo also says "Benli"
 }
 # Rare words in Spanish speech: the name alone opening a sentence ("Bentley, ¿qué ves?") wakes too.
-# Not Fred/Eva — people are called that ("Eva, ven a comer").
+# Not Fred/Eva/Sofi — people are called that ("Eva, ven a comer").
 _STANDALONE = {"bentley"}
 # Spellings that count only after "hey/oye/hola": also people's names ("Wendy, ven a comer").
 _PREFIX_ONLY = {"bentley": ["wendy"]}  # Pablo's "Hey, Bentley" came out of Whisper as "Hey, Wendy."

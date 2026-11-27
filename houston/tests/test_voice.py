@@ -129,6 +129,9 @@ class FakeKokoro:
     def __init__(self):
         self.calls = []
 
+    def load_single_voice(self, name):
+        return np.full(3, {"ef_dora": 1.0, "af_heart": 2.0}[name], dtype=np.float32)
+
     def __call__(self, text, voice, speed):
         self.calls.append((text, voice, speed))
         yield text, "", np.zeros(12000, dtype=np.float32)   # 0.5 s
@@ -158,6 +161,14 @@ def test_kokoro_cache_is_per_voice_name(tmp_path):
     v.cached("¿Sí? Te escucho.", "ef_dora")
     assert [c[1] for c in pipe.calls] == ["em_alex", "ef_dora"]
     assert (tmp_path / "cache" / "em_alex").is_dir()
+
+
+def test_kokoro_blend_weights_the_voices(tmp_path):
+    v, pipe, _ = kokoro_voice(tmp_path)
+    v.cached("Hola, soy Sofi.", "ef_dora:0.6,af_heart:0.4")
+    blended = pipe.calls[0][1]
+    assert np.allclose(blended, 0.6 * 1.0 + 0.4 * 2.0)  # Dora's Spanish, af_heart's timbre
+    assert (tmp_path / "cache" / "ef_dora_0_6_af_heart_0_4").is_dir()
 
 
 def test_sound_file_becomes_48k_raw_and_is_cached(tmp_path):

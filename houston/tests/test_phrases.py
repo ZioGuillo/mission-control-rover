@@ -1,6 +1,6 @@
 import pytest
 
-from houston.phrases import classify, is_phantom
+from houston.phrases import Heard, classify, is_phantom
 
 
 @pytest.mark.parametrize("text,name,kind,rest", [
@@ -112,3 +112,12 @@ def test_a_question_about_resting_does_not_pause():
     heard = classify("Bentley, ¿cuándo descansa Perseverance?", "Bentley")
     assert heard.kind == "wake" and heard.rest == "cuándo descansa Perseverance"
     assert classify("Bentley " + heard.rest, "Bentley").kind != "pause"  # how the session re-probes it
+
+
+def test_hey_sofi_wakes_sofi_in_whisper_spellings():
+    for text in ("Hey Sofi, ¿qué ves?", "Oye Sofy, ¿qué ves?", "Hola Sophie, ¿qué ves?"):
+        assert classify(text, "Sofi") == Heard("wake", "qué ves")
+
+
+def test_sofi_alone_is_a_person():
+    assert classify("Sofi, ven a comer", "Sofi").kind == "other"

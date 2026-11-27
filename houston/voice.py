@@ -59,6 +59,18 @@ def _is_named(voice) -> bool:
     return isinstance(voice, str) and not voice.endswith(".wav")
 
 
+def _blend(spec: str) -> list[tuple[str, float]] | None:
+    """"ef_dora:0.6,af_heart:0.4" -> [("ef_dora", 0.6), ("af_heart", 0.4)]; None for a plain name.
+    Sofi (2026-11-26): Dora's Spanish with af_heart's younger timbre, picked by ear."""
+    if ":" not in spec:
+        return None
+    parts = []
+    for item in spec.split(","):
+        name, _, weight = item.strip().partition(":")
+        parts.append((name.strip(), float(weight)))
+    return parts
+
+
 def _slug(text: str) -> str:
     return re.sub(r"\W+", "_", text.lower()).strip("_")[:_SLUG_MAX]
 
@@ -94,15 +106,17 @@ class Voice:
         with self._lock:
             if self._kokoro is None:
                 self._kokoro = self._kokoro_factory()
+            blend = _blend(name)
+            voice = name if blend is None else sum(w * self._kokoro.load_single_voice(v) for v, w in blend)
             chunks = [np.asarray(audio, dtype="<f4").reshape(-1)
-                      for _, _, audio in self._kokoro(text, voice=name, speed=KOKORO_SPEED)]
+                      for _, _, audio in self._kokoro(text, voice=voice, speed=KOKORO_SPEED)]
         samples = np.concatenate(chunks) if chunks else np.zeros(0, dtype="<f4")
         return _ffmpeg(["-f", "f32le", "-ar", str(KOKORO_RATE), "-ac", "1", "-i", "-",
                         "-ar", str(OUT_RATE), "-ac", "1", "-f", "s16le", "-"], samples.tobytes())
 
     def cached(self, text: str, voice_wav: Path | str) -> bytes:
         if _is_named(voice_wav):
-            voice_id, stem = f"kokoro:{voice_wav}".encode(), voice_wav
+            voice_id, stem = f"kokoro:{voice_wav}".encode(), voice_wav if _blend(voice_wav) is None else _slug(voice_wav)
             tuning = f"{KOKORO_SPEED}".encode()
         else:
             voice_wav = Path(voice_wav)
