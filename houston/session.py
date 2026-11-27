@@ -61,7 +61,9 @@ SAY_LISTENING = "¿Sí? Te escucho."
 SAY_GOODBYE = "¡De nada! Cambio y fuera."
 SAY_PAUSED = "Entendido, descansando."
 SAY_RESUMED = "¡Aquí estoy!"
-FILLERS = ("Mmm, déjame ver…", "Recibido, consultando con la base…")
+# Said while a slow answer is on its way. Pablo 2026-11-26: "Mmm, déjame ver…" came out garbled;
+# just "Copiado." (radio style), every time.
+FILLERS = ("Copiado.",)
 FIXED = (SAY_LISTENING, SAY_GOODBYE, SAY_PAUSED, SAY_RESUMED, *FILLERS, Brain.FAILURE)
 
 WAITING, CONVERSATION, PAUSED = "waiting", "conversation", "paused"
@@ -130,7 +132,7 @@ class RoverSession:
         self._load_sound = load_sound
         self._diag = Diag()
         self._sounds: dict[Path, bytes] = {}
-        # A rover with its own filler sound plays only that (Bentley barks; no "Mmm, déjame ver…").
+        # A rover with its own filler sound plays only that (Bentley barks; no "Copiado.").
         self._fillers = itertools.cycle((rover.filler_sound,) if rover.filler_sound else FILLERS)
         self._cancel = threading.Event()
         self._others = [r.name for r in settings.rovers if r.name.lower() != rover.name.lower()]

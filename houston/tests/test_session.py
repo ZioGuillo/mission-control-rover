@@ -435,7 +435,7 @@ def test_fixed_phrases_prerendered_in_rover_voice():
     s = make("Eva")
     s.prepare()
     expected = ["¿Sí? Te escucho.", "¡De nada! Cambio y fuera.", "Entendido, descansando.",
-                "¡Aquí estoy!", "Mmm, déjame ver…", "Recibido, consultando con la base…", Brain.FAILURE]
+                "¡Aquí estoy!", "Copiado.", Brain.FAILURE]
     assert sorted(s.voice.cached_calls) == sorted((p, EVA_WAV) for p in expected)
     s.handle(utter("Hola Eva."))
     assert len(s.voice.cached_calls) == len(expected)  # served from memory, not re-read
@@ -444,7 +444,7 @@ def test_fixed_phrases_prerendered_in_rover_voice():
 
 # ---------------------------------------------------------------- latency masking
 
-def test_filler_when_answer_is_slow_and_rotates():
+def test_filler_when_answer_is_slow_is_copiado():
     filler_played = threading.Event()
 
     def on_write(pcm):
@@ -460,9 +460,8 @@ def test_filler_when_answer_is_slow_and_rotates():
     s.filler_after = 0.05
     s.handle(utter("Hey Fred, ¿cuántos días tiene un año en Marte?"))
     s.handle(utter("¿y en Júpiter?"))
-    assert s.link.speakers[0].tags() == ["<beep in>", "[Mmm, déjame ver…]", "[Son 687 días.]", "<beep out>"]
-    assert s.link.speakers[1].tags() == ["<beep in>", "[Recibido, consultando con la base…]",
-                                         "[Casi 12 años.]", "<beep out>"]
+    assert s.link.speakers[0].tags() == ["<beep in>", "[Copiado.]", "[Son 687 días.]", "<beep out>"]
+    assert s.link.speakers[1].tags() == ["<beep in>", "[Copiado.]", "[Casi 12 años.]", "<beep out>"]
 
 
 def test_no_filler_when_answer_is_ready():
@@ -915,7 +914,7 @@ def test_session_passes_the_rover_personality_to_the_brain():
 
 
 def test_filler_sound_replaces_every_filler_line():
-    # Bentley (a Shiba Inu) only barks softly while he thinks — no "Mmm, déjame ver…" (Pablo, live test).
+    # Bentley (a Shiba Inu) only barks softly while he thinks — no "Copiado." (Pablo, live test).
     filler_played = threading.Event()
 
     def on_write(pcm):
