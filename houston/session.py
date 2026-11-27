@@ -373,7 +373,8 @@ class RoverSession:
         answer = None
         try:
             answer = (iter([exact]) if exact else
-                      self.brain.answer(history, self.name, self.camera, self.rover.personality, note))
+                      self.brain.answer(history, self.name, self.camera, self.rover.personality, note,
+                                       llm=self.rover.llm))
             for sentence in answer:
                 times.setdefault("first_sentence", self.clock())
                 if cancel.is_set():
@@ -467,6 +468,16 @@ class RoverSession:
                      "rebooted" if rebooted else f"{away:.0f} s away")
             self._state = WAITING
 
+    def _camera_login(self) -> None:
+        """Log in to the rover app now: on a Pi Zero that takes ~7 s, too long inside an answer."""
+        login = getattr(self.camera, "login", None)
+        if login is None:
+            return
+        try:
+            login()
+        except Exception as e:  # the first "¿qué ves?" retries and reports it
+            log.warning("%s: camera login: %s", self.name, e)
+
     def _listen(self, proc) -> None:
         chunks: queue.Queue = queue.Queue()
         reader = threading.Thread(target=self._read_mic, args=(proc.stdout, chunks),
@@ -476,6 +487,7 @@ class RoverSession:
         self._muted = False
         reader.start()
         log.info("%s: listening", self.name)
+        threading.Thread(target=self._camera_login, name="houston-camera-login", daemon=True).start()
         try:
             while self.connected and not self._stop.is_set():
                 try:

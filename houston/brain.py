@@ -16,7 +16,7 @@ import time
 import urllib.request
 from collections.abc import Iterator
 
-from houston import calc, effects, nasa, prompts
+from houston import calc, claude, effects, nasa, prompts
 from houston.config import Settings
 from houston.sentences import Splitter
 
@@ -29,6 +29,8 @@ _TIMEOUT_S = 120.0  # per socket read: a cold 120b load can take a while to send
 _SNAPSHOT_TIMEOUT_S = 6.0
 _WARM_TIMEOUT_S = 600.0  # loading gpt-oss:120b from disk
 _LLM_KEEP_ALIVE = -1     # gpt-oss stays loaded for as long as Ollama runs
+MAX_TOKENS = 2048        # Claude: an answer or a talk-demo act (~15 sentences)
+STORY_MAX_TOKENS = 4096  # Claude: one of the four story parts
 
 # Only deictic "look at this" forms: "alrededor del Sol", "¿qué cámara tiene...?" are talk questions.
 # "¿Qué ves?" only when it ends the question (maybe plus a name) or points here and now;
@@ -147,14 +149,16 @@ class Brain:
             raise BrainError(f"ollama: {reply['error']}")
 
     def answer(self, history: list[dict], name: str, camera, personality: str = "",
-               note: str = "") -> Iterator[str]:
+               note: str = "", llm: str = "local") -> Iterator[str]:
         """Speakable sentences as they stream; ends with FAILURE if anything breaks.
 
         The whole answer gets deadline_s: past it, FAILURE if nothing was said yet, else it just
-        stops. The work runs in a thread so a stalled Ollama read can't hold the rover hostage."""
+        stops. The work runs in a thread so a stalled Ollama read can't hold the rover hostage.
+        llm="claude" answers through the Anthropic API, falling back to the local models when
+        Claude fails before saying anything (no key, no internet, overloaded)."""
         out: queue.Queue = queue.Queue()
         stop = threading.Event()
-        worker = threading.Thread(target=self._work, args=(history, name, camera, personality, note, out, stop),
+        worker = threading.Thread(target=self._work, args=(history, name, camera, personality, note, out, stop, llm == "claude"),
                                   name="houston-brain", daemon=True)
         worker.start()
         long = self.demo_deadline_s if is_demo(history) else self.story_deadline_s if is_story(history) else None
@@ -181,19 +185,28 @@ class Brain:
             stop.set()  # also on close(): the worker drops the Ollama stream at its next line
 
     def _work(self, history: list[dict], name: str, camera, personality: str, note: str,
-              out: queue.Queue, stop: threading.Event) -> None:
+              out: queue.Queue, stop: threading.Event, cloud: bool = False) -> None:
+        said = False
         try:
-            for sentence in self._answer(history, name, camera, personality, note, stop):
-                out.put(("sentence", sentence))
+            try:
+                for sentence in self._answer(history, name, camera, personality, note, stop, cloud):
+                    said = True
+                    out.put(("sentence", sentence))
+            except Exception as e:
+                if not cloud or said or stop.is_set():
+                    raise
+                log.warning("claude failed, answering locally: %s", e)
+                for sentence in self._answer(history, name, camera, personality, note, stop, False):
+                    out.put(("sentence", sentence))
             out.put(("end", None))
         except Exception as e:  # camera, Ollama, NASA-unrelated bugs: the rover must still speak
             out.put(("error", e))
 
     def _answer(self, history: list[dict], name: str, camera, personality: str, note: str,
-                stop: threading.Event) -> Iterator[str]:
+                stop: threading.Event, cloud: bool = False) -> Iterator[str]:
         question = history[-1]["content"]
         if LOOK.search(question):
-            yield from self._look(question, name, camera, personality, stop)
+            yield from self._look(question, name, camera, personality, stop, cloud)
             return
         demo = is_demo(history)
         story = not demo and is_story(history)
@@ -203,13 +216,13 @@ class Brain:
         messages += [dict(m) for m in history[-HISTORY_TURNS:]]
         think = self.settings.think
         if story:
-            yield from self._story(messages, think, stop)
+            yield from self._story(messages, think, stop, cloud)
             return
         for _ in range(MAX_TOOL_ROUNDS + 1):
             splitter, content, thinking, calls = Splitter(), "", "", []
             for msg in self._stream({"model": self.settings.llm, "think": think,
                                      "tools": HOMEWORK_TOOLS if homework else TOOLS,
-                                     "keep_alive": _LLM_KEEP_ALIVE, "messages": messages}, stop):
+                                     "keep_alive": _LLM_KEEP_ALIVE, "messages": messages}, stop, cloud):
                 calls += msg.get("tool_calls") or []
                 content += msg.get("content") or ""
                 thinking += msg.get("thinking") or ""  # echoed back to the model, never spoken
@@ -223,7 +236,7 @@ class Brain:
                 fn = call.get("function") or {}
                 if fn.get("name") == "mirar":
                     yield from self._look((fn.get("arguments") or {}).get("pregunta") or question,
-                                          name, camera, personality, stop)
+                                          name, camera, personality, stop, cloud)
                     return
             messages.append({"role": "assistant", "content": content, "thinking": thinking, "tool_calls": calls})
             for call in calls:
@@ -236,7 +249,7 @@ class Brain:
                     think = "low"  # answering from NASA data, not reasoning
         raise BrainError(f"still calling tools after {MAX_TOOL_ROUNDS} rounds")
 
-    def _story(self, messages: list[dict], think: str, stop: threading.Event) -> Iterator[str]:
+    def _story(self, messages: list[dict], think: str, stop: threading.Event, cloud: bool = False) -> Iterator[str]:
         """The story in STORY_PARTS answers, each picking up where the last one stopped.
         gpt-oss writes a part in seconds and Bentley tells it in minutes, so there is no gap."""
         told = ""
@@ -246,7 +259,8 @@ class Brain:
                 {"role": "user", "content": f"Sigue con la parte {part} de {STORY_PARTS}."}]
             splitter, content = Splitter(), ""
             for msg in self._stream({"model": self.settings.llm, "think": think,
-                                     "keep_alive": _LLM_KEEP_ALIVE, "messages": ask}, stop):
+                                     "keep_alive": _LLM_KEEP_ALIVE, "messages": ask}, stop, cloud,
+                                    max_tokens=STORY_MAX_TOKENS):
                 content += msg.get("content") or ""
                 for sentence in splitter.push(msg.get("content") or ""):
                     yield from effects.split(sentence)
@@ -272,18 +286,26 @@ class Brain:
             return name, {"error": f"no se pudo consultar a la NASA: {e}"}
         return name, {"error": f"herramienta desconocida: {name}"}
 
-    def _look(self, question: str, name: str, camera, personality: str, stop: threading.Event) -> Iterator[str]:
+    def _look(self, question: str, name: str, camera, personality: str, stop: threading.Event,
+              cloud: bool = False) -> Iterator[str]:
         jpeg = camera.snapshot(timeout=_SNAPSHOT_TIMEOUT_S)  # CameraError -> FAILURE, no made-up scene
         splitter = Splitter()
         for msg in self._stream({"model": self.settings.vlm, "think": False, "keep_alive": _LLM_KEEP_ALIVE, "messages": [
                 {"role": "system", "content": prompts.vision(name, personality)},
                 {"role": "user", "content": question, "images": [base64.b64encode(jpeg).decode()]}]},
-                stop):
+                stop, cloud):
             yield from splitter.push(msg.get("content") or "")
         yield from splitter.flush()
 
-    def _stream(self, body: dict, stop: threading.Event) -> Iterator[dict]:
-        """`message` of each NDJSON chunk from Ollama /api/chat (thinking is never spoken)."""
+    def _stream(self, body: dict, stop: threading.Event, cloud: bool = False,
+                max_tokens: int = MAX_TOKENS) -> Iterator[dict]:
+        """`message` of each NDJSON chunk from Ollama /api/chat (thinking is never spoken).
+        With cloud, the same body goes to Claude and comes back in the same shape."""
+        if cloud:
+            yield from claude.stream(body, url=self.settings.anthropic_url,
+                                     api_key=claude.key(self.settings.anthropic_key_file),
+                                     model=self.settings.claude_model, max_tokens=max_tokens, stop=stop)
+            return
         req = urllib.request.Request(self.url, data=json.dumps({**body, "stream": True}).encode(),
                                      headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=_TIMEOUT_S) as resp:

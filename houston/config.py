@@ -7,6 +7,8 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 DEFAULT_NASA_KEY_FILE = Path("~/.config/houston/nasa_key")
+DEFAULT_ANTHROPIC_KEY_FILE = Path("~/.config/houston/anthropic_key")
+_LLMS = {"local", "claude"}
 
 
 @dataclass(frozen=True)
@@ -29,6 +31,8 @@ class Rover:
     # Speaker volume in percent, set on every connection: amixer changes don't survive a reboot
     # unless stored with sudo (Bentley's speaker boots at 100 %, too loud).
     speaker_volume: int | None = None
+    # Who answers: "local" (gpt-oss + qwen on this Mac) or "claude" (Anthropic API, local fallback).
+    llm: str = "local"
 
     @property
     def camera_url(self) -> str:
@@ -51,6 +55,10 @@ class Settings:
     # accurate on the fact sheets once their numbers are spelled out in words.
     think: str = "low"
     nasa_key_file: Path = field(default_factory=lambda: DEFAULT_NASA_KEY_FILE.expanduser())
+    # Rovers with llm = "claude". Fast model: a spoken answer wants its first word quickly.
+    claude_model: str = "claude-haiku-5-5"
+    anthropic_url: str = "https://api.anthropic.com"
+    anthropic_key_file: Path = field(default_factory=lambda: DEFAULT_ANTHROPIC_KEY_FILE.expanduser())
 
 
 def _resolve(value: str | Path, base: Path) -> Path:
@@ -72,6 +80,8 @@ def load(path: Path) -> Settings:
             raw["voice"] = _resolve(raw["voice"], base)
         if raw.get("filler_sound"):
             raw["filler_sound"] = _resolve(raw["filler_sound"], base)
+        if raw.get("llm", "local") not in _LLMS:
+            raise ValueError(f"rover {raw['name']}: llm must be one of {sorted(_LLMS)}")
         rovers.append(Rover(**raw))
 
     opts = dict(data.get("settings", {}))
@@ -79,6 +89,7 @@ def load(path: Path) -> Settings:
     unknown = set(opts) - allowed
     if unknown:
         raise ValueError(f"unknown settings in {path}: {sorted(unknown)}")
-    if "nasa_key_file" in opts:
-        opts["nasa_key_file"] = _resolve(opts["nasa_key_file"], base)
+    for key in ("nasa_key_file", "anthropic_key_file"):
+        if key in opts:
+            opts[key] = _resolve(opts[key], base)
     return Settings(rovers=rovers, **opts)

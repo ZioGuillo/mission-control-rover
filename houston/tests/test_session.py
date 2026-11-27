@@ -186,7 +186,7 @@ class FakeBrain:
         self.notes: list[str] = []
         self._before = before
 
-    def answer(self, history, name, camera, personality="", note=""):
+    def answer(self, history, name, camera, personality="", note="", llm="local"):
         self.calls.append(([dict(m) for m in history], name))
         self.personalities.append(personality)
         self.notes.append(note)
