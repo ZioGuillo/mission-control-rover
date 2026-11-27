@@ -180,3 +180,96 @@ def test_sound_file_becomes_48k_raw_and_is_cached(tmp_path):
     raw = voice_mod.sound(p)
     assert abs(len(raw) - 96000) < 96000 * 0.02
     assert voice_mod.sound(p) is raw
+
+
+# ---------------------------------------------------------------- ElevenLabs (Sofi = Sofía's cloned voice)
+
+import json as _json
+from http.server import BaseHTTPRequestHandler
+
+from houston.tests import fakehttp
+
+SOFI = "elevenlabs:VOZ123|ef_dora:0.6,af_heart:0.4"
+
+
+class FakeEleven:
+    def __init__(self, status=200, pcm=b"\x00\x01" * 24000):  # 1 s of 24 kHz S16 mono
+        self.status, self.pcm, self.requests = status, pcm, []
+        fake = self
+
+        class H(BaseHTTPRequestHandler):
+            def do_POST(self):
+                body = _json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                fake.requests.append((self.path, {k.lower(): v for k, v in self.headers.items()}, body))
+                self.send_response(fake.status)
+                self.end_headers()
+                if fake.status == 200:
+                    self.wfile.write(fake.pcm)
+
+            def log_message(self, *a):
+                pass
+
+        self.srv, self.url = fakehttp.start(H)
+
+
+@pytest.fixture
+def eleven():
+    made = []
+
+    def make(**kw):
+        f = FakeEleven(**kw)
+        made.append(f)
+        return f
+
+    yield make
+    for f in made:
+        fakehttp.stop(f.srv)
+
+
+def eleven_voice(tmp_path, url, key="sk-test"):
+    key_file = tmp_path / "elevenlabs_key"
+    if key is not None:
+        key_file.write_text(key + "\n")
+    pipe = FakeKokoro()
+    v = Voice("cpu", model_factory=lambda d: None, cache_root=tmp_path / "cache", kokoro_factory=lambda: pipe,
+              eleven_url=url, eleven_key_file=key_file)
+    return v, pipe
+
+
+def test_elevenlabs_voice_speaks_through_the_api(tmp_path, eleven):
+    fake = eleven()
+    v, pipe = eleven_voice(tmp_path, fake.url)
+    raw = v.synth("Hola, soy Sofi.", SOFI)
+    path, headers, body = fake.requests[0]
+    assert path.startswith("/v1/text-to-speech/VOZ123") and "pcm_24000" in path
+    assert headers["xi-api-key"] == "sk-test"
+    assert body["text"] == "Hola, soy Sofi." and body["model_id"] == "eleven_v4" and body["language_code"] == "es"
+    assert pipe.calls == []                                  # Kokoro not needed
+    assert abs(len(raw) - 48000 * 2) < 48000 * 2 * 0.02      # 1 s of 24 kHz -> 48 kHz
+
+
+def test_elevenlabs_down_falls_back_to_kokoro(tmp_path, eleven):
+    fake = eleven(status=500)
+    v, pipe = eleven_voice(tmp_path, fake.url)
+    v.synth("Copiado.", SOFI)
+    assert len(fake.requests) == 1 and len(pipe.calls) == 1  # Sofi still speaks, in the Kokoro blend
+
+
+def test_missing_key_falls_back_to_kokoro(tmp_path, eleven):
+    fake = eleven()
+    v, pipe = eleven_voice(tmp_path, fake.url, key=None)
+    v.synth("Copiado.", SOFI)
+    assert fake.requests == [] and len(pipe.calls) == 1
+
+
+def test_fixed_phrase_cached_only_in_the_cloned_voice(tmp_path, eleven):
+    down = eleven(status=500)
+    v, pipe = eleven_voice(tmp_path, down.url)
+    v.cached("Copiado.", SOFI)                    # API down: the Kokoro render is NOT stored as Sofi's
+    assert not (tmp_path / "cache" / "elevenlabs_voz123").exists()
+    up = eleven()
+    v._eleven_url = up.url
+    v.cached("Copiado.", SOFI)
+    v.cached("Copiado.", SOFI)                    # second time from disk
+    assert len(up.requests) == 1
+    assert (tmp_path / "cache" / "elevenlabs_voz123").is_dir()

@@ -6,10 +6,13 @@ human, but Fred went silent mid-answer)."""
 from __future__ import annotations
 
 import hashlib
+import json
+import logging
 import os
 import re
 import subprocess
 import threading
+import urllib.request
 import wave
 from pathlib import Path
 from typing import Callable, Literal
@@ -26,6 +29,18 @@ KOKORO_SPEED = 0.95
 KOKORO_RATE = 24000
 ESPEAK_LIB = "/opt/homebrew/lib/libespeak-ng.dylib"   # brew install espeak-ng
 ESPEAK_DATA = "/opt/homebrew/share/espeak-ng-data"
+
+# ElevenLabs: "elevenlabs:<voice_id>|<fallback>" — a cloned voice (Sofi = Sofía's real voice,
+# 2026-11-26), and the Kokoro voice to use when the API fails (no internet, quota, outage).
+ELEVEN_PREFIX = "elevenlabs:"
+ELEVEN_URL = "https://api.elevenlabs.io"
+ELEVEN_MODEL = "eleven_v4"   # Pablo picked v4 over flash by ear (~2.5 s vs ~1 s to first audio)
+ELEVEN_SETTINGS = {"stability": 0.5, "similarity_boost": 0.8}
+ELEVEN_RATE = 24000          # output_format=pcm_24000: raw S16_LE mono
+ELEVEN_TIMEOUT_S = 20.0
+ELEVEN_KEY_FILE = Path("~/.config/houston/elevenlabs_key").expanduser()
+
+log = logging.getLogger(__name__)
 
 _beeps: dict[str, bytes] = {}
 
@@ -55,8 +70,16 @@ def _kokoro_factory():
     return KPipeline(lang_code="e")  # Spanish
 
 
+def _eleven(voice) -> tuple[str, str | None] | None:
+    """"elevenlabs:ID|fallback" -> (ID, fallback or None); None for any other voice."""
+    if not (isinstance(voice, str) and voice.startswith(ELEVEN_PREFIX)):
+        return None
+    voice_id, _, fallback = voice[len(ELEVEN_PREFIX):].partition("|")
+    return voice_id.strip(), (fallback.strip() or None)
+
+
 def _is_named(voice) -> bool:
-    return isinstance(voice, str) and not voice.endswith(".wav")
+    return isinstance(voice, str) and not voice.endswith(".wav") and _eleven(voice) is None
 
 
 def _blend(spec: str) -> list[tuple[str, float]] | None:
@@ -77,7 +100,8 @@ def _slug(text: str) -> str:
 
 class Voice:
     def __init__(self, device: str | None = None, model_factory: Callable = _default_factory,
-                 cache_root: Path = CACHE_ROOT, kokoro_factory: Callable = _kokoro_factory):
+                 cache_root: Path = CACHE_ROOT, kokoro_factory: Callable = _kokoro_factory,
+                 eleven_url: str = ELEVEN_URL, eleven_key_file: Path = ELEVEN_KEY_FILE):
         self.device = device
         self._factory = model_factory
         self._kokoro_factory = kokoro_factory
@@ -85,9 +109,21 @@ class Voice:
         self._cache_root = Path(cache_root)
         self._model = None
         self._lock = threading.Lock()
+        self._eleven_url = eleven_url.rstrip("/")
+        self._eleven_key_file = Path(eleven_key_file)
 
     def synth(self, text: str, voice_wav: Path | str) -> bytes:
         """Spanish speech in the given voice: 48 kHz mono S16_LE raw."""
+        eleven = _eleven(voice_wav)
+        if eleven:
+            voice_id, fallback = eleven
+            try:
+                return self._synth_eleven(text, voice_id)
+            except Exception as e:
+                if not fallback:
+                    raise
+                log.warning("elevenlabs failed, speaking with %s: %s", fallback, e)
+                return self.synth(text, fallback)
         if _is_named(voice_wav):
             return self._synth_kokoro(text, voice_wav)
         with self._lock:
@@ -100,6 +136,21 @@ class Voice:
         return _ffmpeg(["-f", "f32le", "-ar", str(rate), "-ac", "1", "-i", "-",
                         "-af", f"atempo={TEMPO}", "-ar", str(OUT_RATE), "-ac", "1",
                         "-f", "s16le", "-"], samples.tobytes())
+
+    def _synth_eleven(self, text: str, voice_id: str) -> bytes:
+        key = self._eleven_key_file.read_text(encoding="utf-8").strip()
+        if not key:
+            raise RuntimeError(f"empty ElevenLabs key file {self._eleven_key_file}")
+        body = {"text": text, "model_id": ELEVEN_MODEL, "language_code": "es", "voice_settings": ELEVEN_SETTINGS}
+        req = urllib.request.Request(
+            f"{self._eleven_url}/v1/text-to-speech/{voice_id}?output_format=pcm_{ELEVEN_RATE}",
+            data=json.dumps(body).encode(), headers={"Content-Type": "application/json", "xi-api-key": key})
+        with urllib.request.urlopen(req, timeout=ELEVEN_TIMEOUT_S) as resp:
+            pcm = resp.read()
+        if len(pcm) < 2:
+            raise RuntimeError("elevenlabs returned no audio")
+        return _ffmpeg(["-f", "s16le", "-ar", str(ELEVEN_RATE), "-ac", "1", "-i", "-",
+                        "-ar", str(OUT_RATE), "-ac", "1", "-f", "s16le", "-"], pcm[: len(pcm) // 2 * 2])
 
     def _synth_kokoro(self, text: str, name: str) -> bytes:
         import numpy as np
@@ -115,7 +166,11 @@ class Voice:
                         "-ar", str(OUT_RATE), "-ac", "1", "-f", "s16le", "-"], samples.tobytes())
 
     def cached(self, text: str, voice_wav: Path | str) -> bytes:
-        if _is_named(voice_wav):
+        eleven = _eleven(voice_wav)
+        if eleven:
+            voice_id, stem = f"elevenlabs:{eleven[0]}".encode(), _slug(f"elevenlabs_{eleven[0]}")
+            tuning = f"{ELEVEN_MODEL}|{sorted(ELEVEN_SETTINGS.items())}".encode()
+        elif _is_named(voice_wav):
             voice_id, stem = f"kokoro:{voice_wav}".encode(), voice_wav if _blend(voice_wav) is None else _slug(voice_wav)
             tuning = f"{KOKORO_SPEED}".encode()
         else:
@@ -132,7 +187,16 @@ class Voice:
             return path.read_bytes()
         except FileNotFoundError:
             pass
-        raw = self.synth(text, voice_wav)
+        if eleven:
+            try:
+                raw = self._synth_eleven(text, eleven[0])
+            except Exception as e:  # never cache the fallback voice under the cloned voice's name
+                if not eleven[1]:
+                    raise
+                log.warning("elevenlabs failed for a fixed phrase, using %s (not cached): %s", eleven[1], e)
+                return self.cached(text, eleven[1])
+        else:
+            raw = self.synth(text, voice_wav)
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(f"{path.name}.tmp{os.getpid()}-{threading.get_ident()}")
         tmp.write_bytes(raw)
