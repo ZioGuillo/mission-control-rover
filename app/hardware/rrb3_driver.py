@@ -72,10 +72,10 @@ elif _gpio_available:
 
 
 def _set_driver_pins(left_speed: float, left_dir: int, right_speed: float, right_dir: int) -> None:
-    _left_pwm.ChangeDutyCycle(left_speed * 100 * _PWM_SCALE)
+    _left_pwm.ChangeDutyCycle(left_speed * 100 * _PWM_SCALE * settings.motor_trim_left)
     GPIO.output(_LEFT_1_PIN, left_dir)
     GPIO.output(_LEFT_2_PIN, not left_dir)
-    _right_pwm.ChangeDutyCycle(right_speed * 100 * _PWM_SCALE)
+    _right_pwm.ChangeDutyCycle(right_speed * 100 * _PWM_SCALE * settings.motor_trim_right)
     GPIO.output(_RIGHT_1_PIN, right_dir)
     GPIO.output(_RIGHT_2_PIN, not right_dir)
 

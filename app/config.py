@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     voice_enabled: bool = True
     voice_device: str = ""
     motor_speed_default: Annotated[float, Field(ge=0.0, le=1.0)] = 0.75
+    # Per-side speed multipliers to make 'forward' go straight when one side's
+    # motors are weaker (rover curves toward the weaker side → lower the other).
+    motor_trim_left: Annotated[float, Field(ge=0.0, le=1.0)] = 1.0
+    motor_trim_right: Annotated[float, Field(ge=0.0, le=1.0)] = 1.0
     pan_servo_pin: GpioPin = 12
     tilt_servo_pin: GpioPin = 13
     buzzer_pin: GpioPin = 18

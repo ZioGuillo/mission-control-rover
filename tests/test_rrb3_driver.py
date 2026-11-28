@@ -140,3 +140,24 @@ def test_get_distance_simulated_is_always_finite(monkeypatch):
     monkeypatch.setattr(driver, "simulated", True)
     d = driver.get_distance()
     assert 15.0 <= d <= 150.0
+
+
+def test_set_motors_applies_per_side_trim(monkeypatch):
+    """A rover that curves on 'forward' (one side's motors weaker) is evened
+    out by motor_trim_left/right: each side's duty cycle is multiplied by its
+    trim. Live 2026-11-27: Sofi curved left on forward."""
+    left_pwm, right_pwm = MagicMock(), MagicMock()
+    monkeypatch.setattr(driver, "available", True)
+    monkeypatch.setattr(driver, "simulated", False)
+    monkeypatch.setattr(driver, "_old_left_dir", 1)
+    monkeypatch.setattr(driver, "_old_right_dir", 0)
+    monkeypatch.setattr(driver, "_left_pwm", left_pwm)
+    monkeypatch.setattr(driver, "_right_pwm", right_pwm)
+    monkeypatch.setattr(driver, "GPIO", MagicMock())
+    monkeypatch.setattr(driver.settings, "motor_trim_left", 1.0)
+    monkeypatch.setattr(driver.settings, "motor_trim_right", 0.8)
+
+    driver.set_motors(1.0, 1, 1.0, 0)
+
+    left_pwm.ChangeDutyCycle.assert_called_with(50.0)   # 1.0 * 100 * 0.5 * 1.0
+    right_pwm.ChangeDutyCycle.assert_called_with(40.0)  # 1.0 * 100 * 0.5 * 0.8
