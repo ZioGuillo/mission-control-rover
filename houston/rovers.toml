@@ -50,7 +50,7 @@ password_file = "~/.config/houston/eva_password"
 # After the "|": the Kokoro blend Sofi speaks with if the API fails (no internet, quota).
 voice = "elevenlabs:ZBrV1ZAnxyMS4wdXe3kl|ef_dora:0.6,af_heart:0.4"
 tunnel_port = 18001  # 18000 + unit
-speaker_volume = 70  # 100 % made Sofi drop off the network right after speaking on battery (brownout, 2026-11-26 23:47 + 23:49)
+speaker_volume = 100  # Pablo asked 2026-11-28; on battery 100 % made Sofi drop off the network right after speaking on battery (brownout, 2026-11-26 23:47 + 23:49)
 # Claude API (key in ~/.config/houston/anthropic_key); if it fails, gpt-oss on this Mac answers.
 llm = "claude"
 personality = """Además tienes tu propia personalidad, que manda sobre el entusiasmo de arriba: \
