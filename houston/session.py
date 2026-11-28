@@ -46,7 +46,7 @@ TO_FAMILY = re.compile(rf"^\W*{_FAMILY}\s*,|,\s*{_FAMILY}\W*$", re.I)
 # ...but "¡Sí!" right after the rover asked something is an answer ("¿Quieres oír una historia?").
 SHORT_REPLY = re.compile(r"^\W*(s[ií]+|no|claro|dale|obvio|bueno|ok|okay|vale|yes)\W*$", re.I)
 PAUSED_MAX_S = 2.5         # while resting, only utterances this short go to Whisper ("Fred, despierta")
-BACKOFF_START_S, BACKOFF_MAX_S = 2.0, 30.0
+BACKOFF_START_S, BACKOFF_MAX_S = 2.0, 5.0  # 5 s cap: Sofi "always connected", found fast after a reboot or Wi-Fi drop
 # A rover that rebooted (new boot id) or was away this long comes back awake, not still resting
 # (live 2026-10-29: paused at 15:15, Jetson rebooted at 19:18, "Hey Bentley" got nothing).
 AWAY_CLEARS_PAUSE_S = 60.0

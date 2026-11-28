@@ -596,7 +596,8 @@ def run_until(s, sleeps):
 
 def test_run_backs_off_on_link_errors():
     s = make()
-    assert run_until(s, 7) == [2, 4, 8, 16, 30, 30, 30]
+    # capped at 5 s: a rover back from a reboot or Wi-Fi drop is found within seconds
+    assert run_until(s, 7) == [2, 4, 5, 5, 5, 5, 5]
 
 
 def test_run_answers_then_reconnects_after_stream_ends():
